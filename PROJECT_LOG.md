@@ -165,3 +165,102 @@ ALL 2026-11-02T19:04:20Z: verify FAILED
 the loop; WS client arrives in phase 2 as specified in the docs); only one
 agent exists (`ground-check`); the room loop has no supervisor yet — phase 1
 starts the crew (night-lead + workers in `overnight-crew`, owned by admin).
+
+---
+
+## 2026-11-02 — Phase 1: the crew template is the SOP, and the crew is in the room
+
+**Crew SOP written (`crew/`):**
+- `nightshift.template.yaml` — v1 template, modeled on the repo's
+  `examples/agent-templates/triage-pair.template.yaml`: `team/provider/location/
+  directory/bridge` params; three agent slots — `{team}-night-lead`
+  (`addressing: anyone`), `{team}-worker-1/2` (`addressing: owner-agents`),
+  each with persona instructions (night-lead decomposes goals there; workers
+  ack only, one line; receipts and honesty); `room:` = `overnight-crew`
+  (agents + `{$creator}`, room instructions carrying the message grammar);
+  `kickoff:` waking all three by mention.
+- `taskslip.schema.md` / `receipt.schema.md` per SPEC §4.1/§4.2 — field
+  tables, legal ids, files_allowed as hard whitelist, budgets; a receipt can
+  never merge with FAIL; definitions of who checks what.
+- `rehearsal.md` — the exit checklist.
+
+**Crew stood up headless (`supervisor/dev-tools/provision-crew.mjs`, no
+Console):** template-parsed (line slicing, not a YAML lib), agents
+registered via `POST /agents` using the admin-created registration key from
+phase 0 — **all three owned by `Admin`** (gateway agent detail shows owner
+name), keys stored in `ops/.agents/<name>.key`, chmod 600, git-ignored.
+Addressing set through the gateway `PUT /agents/{id}/addressing-policy`
+(lead: `null` = open; workers: explicit rule `users: []`, `agents: "*"`,
+`owner: true`, `owner_agents: true`, `platform: true`). Room `overnight-crew`
+(id `343069f7-3114-41be-ac5f-fb85661ec909`) provisioned by the gateway's
+`POST /rooms/from-yaml` **from the template's own room block**, and the room
+log shows `Template kickoff on behalf of @user` — the server posted the
+template kickoff itself.
+
+**Rehearsal PASSED (see `docs/rehearsal-transcript.md`):** the phase-1
+runtimes (`crew-rehearsal.mjs` per agent) answered:
+- human mention at 19:59:50 → night-lead replied 20:00:02 in its own words
+  ("Hearing you loud and clear — night-lead standing by…").
+- night-lead's cue (agent-authored) at 20:00:14 → **both workers replied
+  20:00:25/26 in distinct own-word lines**.
+- anonymous post (no mention) at 20:00:46 → nobody replied (`not-addressed`
+  for all three).
+- direct user mention of a worker arrived ADDRESSED (server-side policy did
+  not refuse it on this build) — the runtime's own policy check refused it:
+  "owner-agents policy: user-class sender ignored (workers stay silent)".
+- all four reply strings verified distinct.
+Personas answer through `opencode run` (decision D1), so the words are the
+agents' own, not scripted.
+
+**Docs-vs-server deltas (docs win):**
+1. Gateway-run `from-yaml` registers template agents as managed stand-ins
+   whose canned reply ("I'm currently offline — my connector isn't reporting
+   in.") fires until a runtime holds the agent. Once connected, real personas
+   answer. Room-birth noise only; demos must start runtimes first.
+2. Server-side addressing enforcement at event delivery (the `owner-agents`
+   symbolic subjects) is not observable on 0.31.0 — direct user mentions of
+   policy-restricted workers still arrive as ADDRESSED events. The runtime
+   enforces the rule itself (persona rules read from the template). The
+   phase-2 supervisor will enforce it the same way.
+3. Human-authored em-dash (`—`) posts → 403 "You do not have the appropriate
+   permissions" from Mattermost REST on this deploy (agent posts with the
+   same character post fine; hyphenated human posts fine). Workaround: no
+   em-dashes in human-side posts; non-blocking.
+4. Room-name collision pages of per-run channels remain from earlier
+   attempts (night-lead mention w/ `—`); given the room came from the
+   template this phase, future rehearsals post the kickoff manually and the
+   gateway call stays idempotent via `ops/.agents/crew-state.json`.
+5. No screenshots: the Mattermost login wall of this deploy gives an
+   agent-driven browser no secret-free path (HttpOnly session cookies);
+   `docs/screenshots/README.md` records why the transcript is the evidence.
+
+**verify.sh grown:** `scripts/p1-checks.mjs` (offline, localhost-only) runs
+the template's shape against the tiny parser (version, team param, three
+agent slots, room, kickoff, roster), the schemas' key headings, the
+rehearsal doc, and the live registry: three agents registered, Admin-owned,
+addressing matching the template. Verified green pre-commit (all PASS except
+the expected pre-commit worktree line):
+
+```
+PASS template declares version: 1
+PASS template declares a team param
+PASS template declares a room block
+PASS template room is overnight-crew
+PASS template declares a kickoff
+PASS template room lists the full crew
+PASS template room puts the deployer in it
+PASS crew/taskslip.schema.md carries the contract
+PASS crew/receipt.schema.md carries the contract
+PASS crew/rehearsal.md covers all three agents
+PASS agent nightshift-night-lead registered (5ecf09d8…, owner Admin)
+PASS night-lead addressing open (policy null)
+PASS agent nightshift-worker-1 registered (282984e1…, owner Admin)
+PASS nightshift-worker-1 addressing owner-agents (rule present)
+PASS agent nightshift-worker-2 registered (1d6a3701…, owner Admin)
+PASS nightshift-worker-2 addressing owner-agents (rule present)
+```
+
+**Known gaps for P2+:** the supervisor doesn't exist yet; personas ran on the
+SSE transport (WS client is phase 2's switchclient/listener task); the crew
+agents' runtime ceilings (opencode call caps, no file writes) are rehearsal-
+only and phase 2 replaces them with the real supervisor loop.

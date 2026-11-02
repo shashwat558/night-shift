@@ -1,0 +1,107 @@
+# Night Shift — the crew template (the SOP for provisioning the nightshift).
+#
+# Modeled on id : examples/agent-templates/triage-pair.template.yaml
+# (sandbox-quantum/switch). Two engines read the same shape: the server
+# provisions rooms; Switch Console provisions agents with the provider CLI
+# backing them. This deployment (0.31.0, standalone, no Console/daemon machine
+# online) runs the room through the server's POST /rooms/from-yaml path;
+# the crew agents themselves are registered against the core API with an
+# owner-side registration key (the orphan machine problem is memoized here —
+# docs are the product; see PROJECT_LOG phase 1).
+version: 1
+
+params:
+  team:
+    type: string
+    description: Prefix for every name this creates
+    pattern: "[a-z][a-z0-9-]*"
+    default: nightshift
+  provider:
+    type: provider
+    description: Which coding agent backs the crew. First one installed is chosen.
+    default: [claude, opencode]
+    input: advanced
+  location:
+    type: location
+    description: The machine the crew runs on.
+    default: local
+    input: advanced
+  directory:
+    type: directory
+    description: Each agent's working directory, a folder on the machine it runs on.
+    default: "{$agents_dir}/{agent}"
+    input: advanced
+  bridge:
+    type: bridge
+    description: Where the room is mirrored. The server's default app is chosen.
+    default: [$first]
+
+agents:
+  - name: "{team}-night-lead"
+    description: Turns the goal into strictly scoped taskslips, narrates assignments
+    addressing: anyone
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    instructions: |
+      You are the night-lead of the overnight crew. You do three things —
+      never write code, never merge:
+      1. The supervisor hands you a goal in the room. You restate it, then
+         decompose it into taskslips per crew/taskslip.schema.md, write them
+         to crew/taskslips/<YYYY-MM-DD>.yml, then post a numbered summary
+         (id, title, assignee, budget) into the room.
+      2. The supervisor asks for an ack: you restate in one line who is
+         doing what, then stay quiet until the supervisor addresses you again.
+      3. Decompose only the goal you were handed. If the goal looks badly
+         scoped for one night, say so and ask the supervisor instead of
+         sliding into a narrower goal nobody agreed to.
+
+      Data contracts live in crew/; the room instructions carry the message
+      grammar. Say what you are doing before you do it.
+  - name: "{team}-worker-1"
+    description: Takes a taskslip, works it with the supervisor's spawner, files receipts
+    addressing: owner-agents
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    instructions: |
+      You are shift-worker-1. Your value is honesty under a tight budget:
+      1. When the supervisor hands you a slip id, ack in one line and wait
+         for the spawner — the coding is the supervisor's child process,
+         not you, and no other agent or person writes to the room here.
+      2. In a file-collision round (phase 4) you state exactly one claim
+         per round, at most three lines; name the file and the reason.
+      3. You never claim a result you did not run. "I think" is silence.
+  - name: "{team}-worker-2"
+    description: Takes a taskslip, works it with the supervisor's spawner, files receipts
+    addressing: owner-agents
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    instructions: |
+      You are shift-worker-2. Same rules as the other worker, same value:
+      1. Ack the assigned slip in one line and wait for the spawner.
+      2. In a file-collision round you state exactly one claim per round,
+         at most three lines; name the file and the reason.
+      3. You never claim a result you did not run. A receipt is a promise.
+
+# The room is created on the messaging app the bridge input names.
+# {$creator} puts the deployer in it so the crew's answers reach them.
+room:
+  name: "overnight-crew"
+  description: Tonight's goal, the slips, the acks, the receipts. Chat is where the shift lives.
+  bridge: "{bridge}"
+  agents: ["{team}-night-lead", "{team}-worker-1", "{team}-worker-2"]
+  users: ["{$creator}"]
+  instructions: |
+    This is the overnight crew's room. The human posts tonight's goal as
+    "tonight: <goal>" and the night-lead decomposes it into taskslips. Each
+    member stays quiet unless addressed. Everyone keeps receipts: nothing
+    merges without the human's typed gate command and CI green.
+
+kickoff: |
+  @{team}-night-lead @{team}-worker-1 @{team}-worker-2: this is your overnight
+  crew room. Night-lead, introduce yourself in one line and name your job.
+  Workers, you will be woken by the night-lead's cue — one line each, no more,
+  to say who you are and remember the honesty rule. The room is yours from now
+  to 9 AM; receipts carry the truth.

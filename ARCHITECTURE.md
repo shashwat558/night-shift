@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 0.)*
+phase actually builds them. *(Last updated: end of phase 1.)*
 
 ## Switch server (built phase 0)
 
@@ -40,26 +40,47 @@ logs rooms server-side.
 `crew/` is the crew's standard operating procedure:
 
 - `nightshift.template.yaml` — a Switch room template (modeled on the repo's
-  `triage-pair` example) that provisions room `overnight-crew` with
-  night-lead and two workers, each with addressing rules and job
-  instructions. Delete it and recreating the crew becomes hand work.
+  `triage-pair` example) that declares the whole crew: team prefix, provider
+  and directory params, three agent slots (`{team}-night-lead` with
+  `addressing: anyone`, and two `{team}-worker-N` slots with
+  `addressing: owner-agents`, each with persona instructions), the
+  `overnight-crew` room with the deployer in it, and a kickoff that makes
+  each member state its one-line job. On this deploy the room block is
+  applied through the Gateway's `POST /rooms/from-yaml` (the server posts
+  the kickoff on the deployer's behalf) and the agents are registered
+  against the core API with an admin-created registration key — the
+  Console/machine path stays as the canonical zero-touch flow for a normal
+  Console deployment. Delete it and recreating the crew becomes hand word.
 - `taskslip.schema.md` / `receipt.schema.md` — the wire formats for work
   orders and receipts. Delete these and nothing downstream can trust
   anything a worker claims.
+- `rehearsal.md` — the phase-1 exit checklist, plus the transcript in
+  `docs/rehearsal-transcript.md`; run it on any fresh install before any
+  phase beyond 1.
 
-## night-lead (agent, built phase 1)
+## night-lead: {team}-night-lead (agent, built phase 1)
 
 Turns the human's goal into taskslips (scope, acceptance criteria, files
 allowed, time budget, backlog ref), writes them to `crew/taskslips/<date>.yml`,
-and narrates assignments. It never writes code. Delete it and no night ever
-starts, because nobody decomposes goals into safe units of work.
+and narrates assignments. Addressing `anyone`: the human talks to it directly.
+It never writes code, and in phase 1 it proves this room-side — in the
+rehearsal it answers the human and wakes the workers with one cue each.
+The production taskslip flow is the supervisor's phase-2 job; night-lead's
+template instructions already spell out the exact drill. Delete it and no
+night ever starts, because nobody decomposes goals into safe units of work.
 
-## shift-worker-1 / shift-worker-2 (agents, built phase 1)
+## {team}-worker-1 / {team}-worker-2 (agents, built phase 1)
 
 Room personas: they acknowledge assignments, post negotiation claims in the
 file-collision protocol (phase 4), and are the identities the trust stats
-accrue to. The actual coding is done by headless provider runs the
-supervisor spawns. Delete them and the room has no voices to bargain with.
+accrue to. Addressing `owner-agents`: they wake for the supervisor and
+fellow crew members, never for a human's direct mention (demonstrated in
+rehearsal: a user-class mention arrived addressed and the runtime held the
+line — the server side does not refuse on 0.31.0, recorded in the deltas).
+The actual coding is done by headless provider runs the supervisor spawns.
+Delete them and the room has no voices to bargain with.
+
+## supervisor/dev-tools/provision-crew.mjs + crew-rehearsal.mjs (built phase 1)
 
 ## headless workers (child processes, built phase 2)
 
@@ -104,7 +125,11 @@ reproducible evidence.
 The always-green contract: every check prints labeled PASS/FAIL, offline
 mode runs with zero AI calls and zero flaky networks, `--live` optionally
 exercises the real stack. Night Shift never commits, and never builds, on a
-red base. Delete it and nobody can ever again prove the phases keep working.
+red base. Since phase 1 it also runs `scripts/p1-checks.mjs`: the crew SOP
+must literally parse (no YAML library — the template keys, the room roster,
+the kickoff), the schemas must state their contracts, and the three crew
+agents must exist, admin-owned, with the template's addressing rules.
+Delete it and nobody can ever again prove the phases keep working.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)
 
@@ -116,3 +141,12 @@ realities it discovered on this build (SSE needs `Accept: text/event-stream`,
 ops results wrap in `{"result": …}`, self-setting prompts the owner path).
 The production supervisor will reuse the same flows over the WebSocket
 transport. Delete it and every future fresh install loses its smoke test.
+
+The phase-1 pair beside it: `provision-crew.mjs` reads the template's agent
+blocks and stands the crew up (registration through the admin formula,
+addressing through the Gateway, room through `POST /rooms/from-yaml`),
+and `crew-rehearsal.mjs` is one agent's rehearsal runtime — it loads the
+agent's template persona, listens on the SSE transport, acts only on
+addressed messages, answers with `opencode run` words, and self-enforces
+the addressing rule. Delete the pair and standing the crew up after a
+machine reset becomes guesswork.

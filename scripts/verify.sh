@@ -83,6 +83,13 @@ fi
 ( cd target && npm test >/dev/null 2>&1 ) &&
     pass "target tests green" || fail "target tests failing"
 
+# phase-1 additions: the crew SOP parses with the tiny provider (no YAML lib)
+if node scripts/p1-checks.mjs; then
+    pass "crew template keys + schemas + crew agents registered"
+else
+    fail "phase-1 crew checks failed (see node scripts/p1-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"
