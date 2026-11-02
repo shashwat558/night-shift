@@ -1,0 +1,17 @@
+# Night Shift secrets/stack state — never commit
+ops/.env
+ops/*
+!ops/.gitkeep
+supervisor/.env
+node_modules/
+dist/
+.DS_Store
+__pycache__/
+*.log
+
+# target/ is its own git repo (see target/README.md); plan/spec live in outer repo
+target/
+
+# runtime artifacts
+docs/reports/
+*.pid
