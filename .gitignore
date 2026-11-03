@@ -15,3 +15,6 @@ target/
 # runtime artifacts
 docs/reports/
 *.pid
+
+# supervisor runtime state (cursor persistence)
+supervisor/.state.json

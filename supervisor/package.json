@@ -1,0 +1,18 @@
+{
+  "name": "nightshift-supervisor",
+  "private": true,
+  "type": "module",
+  "description": "Night Shift shift-supervisor: Switch agent-protocol client that runs the overnight loop (goal in, taskslips out, workers spawned, PRs opened).",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
