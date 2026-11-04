@@ -238,21 +238,27 @@ export class SwitchClient {
       return;
     }
     const type =
-      typeof frame.type === "string"
-        ? frame.type
-        : typeof frame.data === "object" && frame.data !== null && typeof (frame.data as DomainData).type === "string"
-          ? (frame.data as DomainData).type
-          : "";
+      typeof frame.event === "string"
+        ? frame.event
+        : typeof frame.type === "string"
+          ? frame.type
+          : typeof frame.data === "object" && frame.data !== null && typeof (frame.data as DomainData).type === "string"
+            ? (frame.data as DomainData).type
+            : "";
 
     if (type === "connection_state") {
       this.sawConnectionState = true;
-      this.adoptConnectionState(frame as unknown as ControlFrame);
+      const c = (frame.data && typeof frame.data === "object" ? frame.data : frame) as unknown as ControlFrame;
+      this.adoptConnectionState(c);
       return;
     }
     if (type === "ping") {
-      // NOTE: ws.ts answers this ping inline with OUR pong before any text of
-      // the chunk dispatches. What arrives here is bookkeeping only.
       this.lastPingAt = Date.now();
+      // Server sends ping as an application text frame: {"event":"ping","data":{}}
+      // Switch protocol expects a text frame pong with the cursor: {"type":"pong","cursor":N}
+      if (this.ws?.isOpen) {
+        this.ws.sendText(JSON.stringify({ type: "pong", cursor: this.cursor }));
+      }
       return;
     }
     if (type === "evicted") {
