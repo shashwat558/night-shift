@@ -8,7 +8,9 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SUPERVISOR_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// When compiled: file is at dist/src/env.js; two levels up reaches supervisor/.
+// When run as source (ts-node): file is at src/env.ts; two levels up still OK.
+export const SUPERVISOR_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // The supervisor sits at <repo>/supervisor; the monorepo root is one level up.
 export const REPO_ROOT = resolve(SUPERVISOR_DIR, "..");
 
