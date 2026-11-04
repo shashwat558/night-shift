@@ -178,13 +178,13 @@ async function runProviderWithBudget(
     const child = spawn(provider, args, { cwd, env: process.env, detached: true });
     let done = false;
     let timedOut = false;
-    let hardKill: NodeJS.Timeout = setTimeout(() => {}, 2 ** 31); // placeholder until armed
+    let hardKill: NodeJS.Timeout | null = null;
 
     const finish = (code: number | null): void => {
       if (done) return;
       done = true;
       clearTimeout(deadline);
-      clearTimeout(hardKill);
+      if (hardKill) clearTimeout(hardKill);
       clearTimeout(lastResort);
       resolve({ exitCode: code, output: output.slice(-40_000), timedOut });
     };

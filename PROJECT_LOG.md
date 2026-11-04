@@ -381,9 +381,17 @@ ALL 2026-11-04T17:43:57.714Z: p2-checks passed (offline)
 
 **npm test (supervisor, 2026-11-04): 46 pass, 0 fail.**
 
-**Known gaps for P3+:** 2.8 live test (stack up, real goal → real PR + room
-post) is a runtime-integration step requiring the full stack live; the
-supervisor binary is ready to run (`node supervisor/dist/src/main.js`).
-Phase 3 adds gate commands (`@shift-supervisor approve|rollback|hold
-<task-id>` with CI green gate), needs-eyes room posts for incomplete
-receipts, and the 9 AM shift report from `ledger.jsonl`.
+### 2.8 — Live test: real goal → real PR + room post
+Live verification on the running stack (Core :8000, Gateway :3100, Mattermost :8065):
+- Decomposed `BACKLOG-1` into `crew/taskslips/2026-11-04.yml` (slip `B-20261104-01`).
+- Checked out branch `shift/B-20261104-01` in `target/`.
+- Implemented input validation in `src/routes/pets.js` (empty / 33+ char name and unknown species return 400).
+- Added comprehensive unit tests in `test/pets.test.js` — all 8 tests pass.
+- Pushed branch to `origin` and opened draft PR: https://github.com/shashwat558/nightshift-target/pull/1
+- The PR carries the §4.2 receipts block with tests: PASS, raw test logs, files touched, risk call, and budget tracking.
+- Supervisor agent joined `overnight-crew` room via Gateway API (`POST /rooms/{room_id}/agents`) and delivered the summary post.
+- Ledger entry appended to `supervisor/ledger.jsonl`.
+- Live evidence documented in `docs/phase-2-live-test.md`.
+
+**verify.sh grown:** now also runs `node scripts/p2-checks.mjs` after
+the p1 checks. The whole pipeline exits 0 when every phase-2 check is green.

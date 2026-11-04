@@ -124,7 +124,7 @@ export async function createDraftPr(
   opts: { provider: string; ghRepo: string | null; title?: string; envOverride?: NodeJS.ProcessEnv },
 ): Promise<PrResult> {
   const envOpt = opts.envOverride;
-  const push = await exec("gh", ["push", "-q", "--force-with-lease", "-u", "origin", `shift/${slip.id}`], cwd, 120_000, { env: envOpt });
+  const push = await exec("git", ["push", "-q", "--force-with-lease", "-u", "origin", `shift/${slip.id}`], cwd, 120_000, { env: envOpt });
   if (!push.ok) {
     return { ok: false, prUrl: null, prNumber: null, output: `push failed: ${push.output}` };
   }

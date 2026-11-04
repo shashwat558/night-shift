@@ -1,0 +1,17 @@
+slips:
+  - id: B-20261104-01
+    backlog_ref: BACKLOG-1
+    title: Add input validation to POST /pets
+    assignee: nightshift-worker-1
+    scope: >-
+      Validate POST /pets body: empty or 33+ char name must return 400 with {error:"invalid_name"}.
+      Unknown species (not in cat/dog/hamster/canary/gecko/axolotl) must return 400 with {error:"invalid_species"}.
+    files_allowed:
+      - src/routes/pets.js
+      - test/pets.test.js
+    acceptance:
+      - POST /pets with empty name returns 400 invalid_name
+      - POST /pets with name > 32 chars returns 400 invalid_name
+      - POST /pets with unknown species returns 400 invalid_species
+      - existing tests pass
+    time_budget_minutes: 10

@@ -146,10 +146,6 @@ function writeGhShim(): void {
   // fragile quoting inside the script itself
   const script = [
     SHIM_SHEBANG,
-    'if [ "$1" = "push" ]; then',
-    '  [ "$NSP_GH_PUSH_OK" = "1" ] || { echo "push denied: forgery CI" >&2; exit 1; }',
-    "  exit 0",
-    "fi",
     'if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
     '  echo "$NSP_GH_CREATE_OUT"',
     "  exit 0",
@@ -163,6 +159,18 @@ function writeGhShim(): void {
   ].join("\n");
   writeFileSync(join(shimDir, "gh"), script + "\n");
   chmodSync(join(shimDir, "gh"), 0o750);
+
+  // fake git shim for push tests
+  const gitScript = [
+    SHIM_SHEBANG,
+    'if [ "$1" = "push" ]; then',
+    '  [ "$NSP_GH_PUSH_OK" = "1" ] || { echo "push denied: forgery CI" >&2; exit 1; }',
+    "  exit 0",
+    "fi",
+    'exec /usr/bin/git "$@"',
+  ].join("\n");
+  writeFileSync(join(shimDir, "git"), gitScript + "\n");
+  chmodSync(join(shimDir, "git"), 0o750);
 }
 
 const OUT1 = "Created draft PR https://github.com/acme/petshop/pull/7";
