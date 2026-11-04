@@ -90,6 +90,13 @@ else
     fail "phase-1 crew checks failed (see node scripts/p1-checks.mjs)"
 fi
 
+# phase-2 additions: parser/renderer/ws unit tests + synthetic goal/receipt checks
+if node scripts/p2-checks.mjs; then
+    pass "phase-2 offline checks (slips parser, receipt renderer, unit tests)"
+else
+    fail "phase-2 checks failed (see node scripts/p2-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

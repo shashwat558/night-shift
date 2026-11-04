@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 1.)*
+phase actually builds them. *(Last updated: end of phase 2.)*
 
 ## Switch server (built phase 0)
 
@@ -103,6 +103,51 @@ runtime dependencies are Node's own WebSocket/fetch/fs. Delete it and
 taskslips pile up unread: nothing merges, nothing is blocked, no report at
 9 AM.
 
+**Phase 2 internals (the full implementation):**
+
+- `src/env.ts` — parses `supervisor/.env`; `loadConfig` / `testConfig`
+  (the offline helper every test file imports); no runtime library.
+- `src/ws.ts` — dependency-free RFC 6455 WebSocket client over
+  `http.request` (upgrade event). Sends the `Authorization: Bearer <key>`
+  header that Node's built-in `WebSocket` cannot attach. Answers pings with
+  the caller's pong payload BEFORE dispatching events (the cursor guarantee).
+  Reconnects on drop; refuses takeover. Fully tested with an in-process
+  server (`test/ws-harness.ts`).
+- `src/switchclient.ts` — connection lifecycle on top of `ws.ts`. Builds
+  the connection URL (`connection_id`, `rooms`, `start_from`, `expected_
+  generation`), runs the ping watchdog (8s without ping → force close →
+  resume), handles all frame types (connection_state, pong, evicted,
+  gap, refused), advances and persists the cursor, posts messages and
+  runs ops via HTTP. Reconnects on `heartbeat_lapsed`; stops final on
+  `taken_over`.
+- `src/state.ts` — cursor + generation persisted to `.state.json`
+  (chmod 600, git-ignored) so restarts resume instead of replaying.
+- `src/listener.ts` — classifies domain frames into `onAddressed` /
+  `onNonAddressed` / `onOtherDomain`; identifies human senders by the
+  bridge-puppet id pattern (`-user:`); extracts `@mention` handles.
+- `src/slips.ts` — zero-library strict YAML parser for
+  `crew/taskslips/<date>.yml`. Rejects the whole file on the first error,
+  names the line and field. 8 test cases; no js-yaml.
+- `src/goals.ts` — 2-phase watcher: phase A waits for the slips file to
+  appear (fs.watch + 1s poll fallback); phase B re-parses on every mtime
+  change until the file is clean. Clock is injectable for offline tests.
+- `src/spawner.ts` — headless worker runner: clean-worktree check → branch
+  from `origin/main` → provider child process with SIGTERM/SIGKILL budget
+  kill-switch (detached process group, 5s SIGKILL grace) → collect diff +
+  test run truth.
+- `src/prs.ts` — `parseProviderReceipt` pulls the worker's own receipts
+  block from its stdout; `renderReceipts` overlays the supervisor's facts
+  (actual diff, actual test exit, measured minutes); `renderPrBody` wraps
+  it in the PR body (scope, files_allowed, acceptance, receipts last);
+  `createDraftPr` runs `git push` + `gh pr create --draft`; `ciStatus`
+  reads the rollup from `gh pr view --json statusCheckRollup`.
+- `src/main.ts` — the overnight loop: load config, start SwitchClient,
+  wait for `tonight: …` from a human, nudge night-lead, watch for slips,
+  post the slip roster to the room, then for each slip: post assignment
+  narration + worker ack nudge → run the headless coder → open draft PR →
+  post room summary (task id / branch / PR link / PASS|FAIL) → append a
+  `ledger.jsonl` entry. SIGTERM/SIGINT cleanly stops the client.
+
 ## target/ — the petshop service (its own git repo, built phase 0)
 
 A small Express API the crew works on: health, pet list with pagination, pet
@@ -129,6 +174,11 @@ red base. Since phase 1 it also runs `scripts/p1-checks.mjs`: the crew SOP
 must literally parse (no YAML library — the template keys, the room roster,
 the kickoff), the schemas must state their contracts, and the three crew
 agents must exist, admin-owned, with the template's addressing rules.
+Since phase 2 it also runs `scripts/p2-checks.mjs` (offline): the slips
+parser rejects bad files and round-trips good ones, the receipt renderer
+emits the §4.2 field order, `renderPrBody` puts the receipts block last,
+`parseProviderReceipt` round-trips, `appendLedger` writes valid JSONL, and
+all 46 unit tests (slips, prs, goals, spawner, switchclient, ws) pass.
 Delete it and nobody can ever again prove the phases keep working.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)

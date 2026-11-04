@@ -264,3 +264,126 @@ PASS nightshift-worker-2 addressing owner-agents (rule present)
 SSE transport (WS client is phase 2's switchclient/listener task); the crew
 agents' runtime ceilings (opencode call caps, no file writes) are rehearsal-
 only and phase 2 replaces them with the real supervisor loop.
+
+---
+
+## 2026-11-04 — Phase 2: supervisor scaffold, WS client, slips/goals, spawner, prs, orchestration
+
+**What was built (steps 2.1 – 2.7, all verified green):**
+
+### 2.1 — supervisor scaffold
+`supervisor/` created with `package.json` (private, `type: "module"`,
+`engines: {node: ">=22"}`, devDeps: typescript + @types/node only —
+zero runtime deps), `tsconfig.json` (ES2022/NodeNext, strict, noUnchecked
+IndexedAccess), `src/env.ts` (config contract, `loadConfig`/`testConfig`,
+env-file parser), `src/state.ts` (cursor + generation persisted to
+`.state.json` chmod 600), `src/provision.ts` (once-only registration,
+key chmod 600, gateway addressing, join overnight-crew). The provisioner
+is distinct from the runtime.
+
+### 2.2 — switchclient.ts + listener.ts + ws.ts
+`src/ws.ts`: dependency-free RFC 6455 WebSocket client over `http.request`
+upgrade event. Sends `Authorization: Bearer <key>` in the Upgrade request
+(a header Node's built-in WebSocket cannot attach). Pong-before-dispatch
+contract: answers the server's ping with the caller's cursor BEFORE the
+chunk's events are dispatched. Reconnects on drop; `taken_over` is a final
+stop (no reconnect). `src/switchclient.ts`: connection lifecycle on top of
+ws.ts — builds the URL, runs the 8s ping watchdog, handles `evicted /
+connection_state / gap / refused`, bumps and persists the cursor,
+posts messages and runs ops over HTTP. `src/listener.ts`: classifies frames
+(`onAddressed` / `onNonAddressed` / `onOtherDomain`), detects human senders
+by `-user:` in the bridge puppet id, extracts `@mention` handles.
+`test/ws.test.js` + `test/ws-harness.ts` + `test/switchclient.test.ts`:
+frame unit tests (Authorization header present, pong before dispatch,
+fragmentation, close handshake, abrupt drop, Sec-WebSocket-Accept
+rejection, 128b length path, plain HTTP refusal, reconnect on
+heartbeat_lapsed, taken_over final, cursor persistence, gap, 401 halt).
+
+### 2.3 — slips.ts + goals.ts
+`src/slips.ts`: zero-library strict YAML parser. Rejects the whole file on
+the first error; names the line and field. 8 test cases covering the full
+acceptance matrix. `src/goals.ts`: `isGoal` / `goalText` helpers; 2-phase
+`watchForSlips` (phase A: fs.watch + 1s poll until the file appears;
+phase B: re-parse on every mtime change until clean — clock injectable for
+offline tests). `test/goals.test.ts`: goal grammar, candidate filenames,
+phase A appear, phase B settle, timeout, persist-dirty surfacing.
+
+### 2.4 — spawner.ts
+`src/spawner.ts`: `providerArgs` / `providerPrompt` (opencode default,
+claude -p option via `cfg.provider`); `runWorker`: clean-worktree check
+(refuses to start on uncommitted changes), `git fetch + checkout -B
+shift/<id> origin/main`, provider child process with
+SIGTERM + 5s SIGKILL kill-switch (detached process group), `git diff
+--name-only origin/main...HEAD` + full diff, real `npm test` run. Never
+throws. `rawTestLogTail` (last 25 lines, raw). `test/spawner.test.ts`:
+offline synthetic repo (bare origin + local clone), fake opencode shim on
+PATH shim dir; 5 test cases (clean run, dirty worktree block, budget kill,
+red test, unknown provider).
+
+### 2.5 — prs.ts
+`src/prs.ts`: `parseProviderReceipt` pulls the worker's block from its
+stdout; `renderReceipts` overlays the supervisor's facts in the §4.2 field
+order (summary, files-touched, tests, test-log in a fenced block, risk-call,
+deviations, budget); `renderPrBody` wraps everything with the PR header;
+`createDraftPr` runs `git push --force-with-lease + gh pr create --draft`;
+`ciStatus` reads `gh pr view --json statusCheckRollup`. All `gh` calls use
+an `envOverride` shim for offline tests. `test/prs.test.ts`: 9 test cases
+(renderReceipts field order, FAIL/timeout/placeholder, parseProviderReceipt
+round-trip, missing block, renderPrBody receipts-last, createDraftPr
+success/push-failure, overlay inside body, ciStatus 4 states).
+
+### 2.6 — main.ts (orchestration)
+`src/main.ts`: overnight loop — load config from `supervisor/.env`,
+start `SwitchClient`, wait for human `tonight: …` message, nudge
+`@{crew}-night-lead`, call `watchForSlips` (10 min phase A, 5 min phase
+B), post the slip roster to the room, then for each slip sequentially:
+`assignmentNarration` room post, nudge the assigned worker agent, run
+`runWorker`, call `createDraftPr`, post `runSummaryPost` (task id, branch,
+PR link, PASS|FAIL|BLOCKED), append a `LedgerEntry` to `ledger.jsonl`.
+SIGTERM/SIGINT cleanly stop the client. The entry point guard checks
+`process.argv[1]` so the module is import-safe for tests.
+
+### 2.7 — scripts/p2-checks.mjs (offline verify)
+14-check offline suite (zero AI calls, zero flaky networks):
+- `parseSlips`: valid slip round-trips; invalid rejected; missing
+  `backlog_ref` rejected.
+- `renderReceipts`: all §4.2 fields present; summary first, budget last;
+  PASS marker.
+- `renderPrBody`: receipts block is last.
+- `parseProviderReceipt`: round-trip fields; missing block → `found=false`.
+- `main.js` helpers: `assignmentNarration` contains task id + handle;
+  `runSummaryPost` PASS case + BLOCKED reason propagated; `appendLedger`
+  writes valid JSONL.
+- Node `--test` suite: all 46 unit tests pass (slips, prs, goals, spawner,
+  switchclient, ws).
+
+**verify.sh grown:** now also runs `node scripts/p2-checks.mjs` after
+the p1 checks. The whole pipeline exits 0 when every phase-2 check is green.
+
+**Verified green (p2-checks.mjs, 2026-11-04):**
+```
+PASS parseSlips: valid slip round-trips
+PASS parseSlips: invalid slip rejected with errors
+PASS parseSlips: slip missing backlog_ref rejected
+PASS renderReceipts: all §4.2 fields present
+PASS renderReceipts: summary first, budget last
+PASS renderReceipts: PASS marker present for passing run
+PASS renderPrBody: receipts block is last (budget line is final)
+PASS parseProviderReceipt: round-trip fields correct
+PASS parseProviderReceipt: missing block → found=false
+PASS assignmentNarration: contains task id and worker handle
+PASS runSummaryPost: PASS, PR#, task id present
+PASS runSummaryPost: BLOCKED reason propagated
+PASS appendLedger: writes valid JSONL with correct fields
+PASS unit tests: 46 tests, 0 failures
+ALL 2026-11-04T17:43:57.714Z: p2-checks passed (offline)
+```
+
+**npm test (supervisor, 2026-11-04): 46 pass, 0 fail.**
+
+**Known gaps for P3+:** 2.8 live test (stack up, real goal → real PR + room
+post) is a runtime-integration step requiring the full stack live; the
+supervisor binary is ready to run (`node supervisor/dist/src/main.js`).
+Phase 3 adds gate commands (`@shift-supervisor approve|rollback|hold
+<task-id>` with CI green gate), needs-eyes room posts for incomplete
+receipts, and the 9 AM shift report from `ledger.jsonl`.
