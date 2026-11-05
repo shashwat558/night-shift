@@ -118,6 +118,13 @@ else
     fail "phase-5 checks failed (see node scripts/p5-checks.mjs)"
 fi
 
+# phase-6 additions: judge quickstart, deterministic demo schema, submission kit
+if node scripts/p6-checks.mjs; then
+    pass "phase-6 README quickstart, demo schema, and submission checklist"
+else
+    fail "phase-6 checks failed (see node scripts/p6-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

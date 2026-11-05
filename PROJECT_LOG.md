@@ -573,3 +573,37 @@ report-window checks, publisher idempotency, local 09:00 calculation, and a
 clone and proves its replay matches the same golden file. The complete
 supervisor suite is 101/101. Live evidence is in
 `docs/phase-5-live-test.md` and `docs/phase-5-room-transcript.json`.
+
+## Phase 6 — demo day and reproducible handoff (2026-11-06)
+
+The fresh-clone audit found an important packaging gap before any demo work:
+the outer repository ignored all of `ops/` and the nested target, so a judge
+could not execute the documented stack. The fix keeps secrets and generated
+agent state ignored while tracking the pinned Switch 0.31.0 Compose contract
+and blank environment example. `scripts/bootstrap.sh` clones the separate
+target repository, installs locked dependencies, builds the supervisor, and
+generates a chmod-600 `ops/.env` without replacing an existing environment.
+
+`demo/night.yml` declares exactly three bounded outcomes: merge, rollback,
+and deliberate collision. `demo/run.mjs` validates that schema, creates an
+isolated local remote from target main, runs the actual target test suite on
+all three branches, renders and validates production receipts, checks the
+production gate table, detects overlap from the actual branch diffs, parses
+two worker claims, forces the promised Git rebase conflict, resolves it in
+the agreed order, re-tests, and renders the ledger-derived report. No public
+PR or production ledger is mutated. Offline completion took 4.5 seconds.
+
+The live Switch rehearsal took 5.8 seconds. Ten room posts, all prefixed
+`[scripted demo]`, show the goal, three clean receipts, collision and order,
+merge, rollback reason, rebase/retest merge, and final 2/1 report. Raw evidence
+is in `docs/phase-6-room-transcript.json`; interpretation and limits are in
+`docs/phase-6-live-test.md`. Demo PR numbers are identifiers, not GitHub PRs,
+and no autonomous worker-reasoning claim is made.
+
+The new root README leads with the real trust problem, includes the Mermaid
+architecture, clone-to-demo quickstart, receipts and gate rules, Switch's
+non-optional role, evidence, and honest limitations. `docs/demo-shotlist.md`
+maps a 3–4 minute recording to the four judging dimensions and names the
+primary Best Business Workflow track, optional side-track rule, required
+repo/video/README artifacts, secret checks, and the November 7 23:59 IST
+deadline. `scripts/p6-checks.mjs` lints those promises and the demo schema.

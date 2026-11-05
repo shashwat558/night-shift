@@ -1,7 +1,9 @@
 # Night Shift secrets/stack state — never commit
 ops/.env
-ops/*
-!ops/.gitkeep
+ops/.agents/
+ops/.registration-key.json
+ops/generate-env-secrets.sh
+ops/standalone-docker-compose.build.yml
 supervisor/.env
 node_modules/
 dist/

@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 5.)*
+phase actually builds them. *(Last updated: end of phase 6.)*
 
 ## Switch server (built phase 0)
 
@@ -208,7 +208,28 @@ cap planning, deadline continuation, and registry replay.
 Phase 4 adds collision scanning and negotiated-order checks. Phase 5 adds
 `scripts/p5-checks.mjs`: exact golden report replay, append/idempotency and
 accelerated-clock tests, then a clean scratch-clone build and replay.
+Phase 6 adds `scripts/p6-checks.mjs`: README quickstart commands, tracked
+stack inputs, the three-outcome demo schema, and the submission checklist.
 Delete it and nobody can ever again prove the phases keep working.
+
+## Deterministic judge demo (built phase 6)
+
+`demo/night.yml` is a bounded three-slip script: one merge, one rollback, and
+one deliberate collision. `demo/run.mjs` creates an isolated Git remote from
+target main, makes three branches, runs the real target tests, renders and
+validates receipts, scans actual diffs, negotiates an order, forces and
+resolves the rebase conflict, re-tests, applies the gate decisions, and folds
+its append-only event stream through the production report renderer. `--live`
+posts each stage through Switch; `--offline` prints the same transcript. Both
+paths label the run as scripted and leave the target checkout and production
+ledger untouched. Delete it and judges must manually reconstruct five phases
+of behavior before they can see the product's complete trust loop.
+
+`scripts/bootstrap.sh`, the tracked pinned Compose file, and the judge README
+close the fresh-clone boundary. Bootstrap clones the separately versioned
+target, installs locked dependencies, builds the supervisor, and generates
+local secrets only when no `ops/.env` exists. Runtime secrets, agent state,
+reports, and the nested target remain ignored.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)
 

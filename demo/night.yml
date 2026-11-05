@@ -1,0 +1,25 @@
+version: 1
+name: Night Shift judge rehearsal
+max_runtime_seconds: 600
+goal: Ship one clean change, roll one back, and negotiate one deliberate collision
+slips:
+  - id: DEMO-01
+    title: First clean candidate
+    worker: nightshift-worker-1
+    outcome: merge
+    file: demo/shared.txt
+    content: first candidate landed
+  - id: DEMO-02
+    title: Candidate rejected at the trust gate
+    worker: nightshift-worker-2
+    outcome: rollback
+    file: demo/rollback.txt
+    content: candidate intentionally rolled back
+    rollback_reason: scripted scope review rejection
+  - id: DEMO-03
+    title: Colliding candidate rebased after negotiation
+    worker: nightshift-worker-2
+    outcome: collision
+    file: demo/shared.txt
+    content: second candidate landed after rebase
+    collide_with: DEMO-01
