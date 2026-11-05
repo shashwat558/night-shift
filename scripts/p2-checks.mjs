@@ -270,7 +270,8 @@ slips:
   const result = spawnSync(
     process.execPath,
     ["--test", "dist/test/slips.test.js", "dist/test/prs.test.js", "dist/test/goals.test.js",
-     "dist/test/spawner.test.js", "dist/test/switchclient.test.js", "dist/test/ws.test.js"],
+     "dist/test/spawner.test.js", "dist/test/switchclient.test.js", "dist/test/ws.test.js",
+     "dist/test/gates.test.js", "dist/test/night.test.js"],
     { cwd: join(ROOT, "supervisor"), stdio: "pipe", encoding: "utf8", timeout: 120_000 }
   );
 

@@ -37,6 +37,20 @@ import {
   renderReceipts,
   renderPrBody,
 } from "./prs.js";
+import {
+  parseGateCommand,
+  handleGateCommand,
+  rebuildOpenTasks,
+  appendGateEvent,
+  type GateCommand,
+  type OpenTask,
+} from "./gates.js";
+import {
+  readNightLimits,
+  runBudgetedNight,
+  nightRosterPost,
+  type NightLimits,
+} from "./night.js";
 import type { Slip } from "./slips.js";
 
 // ---- ledger ------------------------------------------------------------------
@@ -122,10 +136,21 @@ interface NightContext {
   client: SwitchClient;
   roomId: string;
   busy: boolean;
+  /** Open tasks + their PRs — the gate surface (rebuilt from the ledger). */
+  registry: Map<string, OpenTask>;
+  limits: NightLimits;
+}
+
+/** Result of one slip run — what the budgeted night reads per outcome. */
+export interface SlipRunResult {
+  blocked: boolean;
+  reason?: string;
+  testPass: boolean | null;
+  prOk: boolean;
 }
 
 /** Run one slip end-to-end: worker run → PR → room post → ledger. */
-async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[]) => void): Promise<void> {
+async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[]) => void): Promise<SlipRunResult> {
   const { cfg, client, roomId } = ctx;
 
   // 1. assignment narration + worker ack nudge
@@ -154,13 +179,14 @@ async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[])
   // 4. room post (task id, branch, PR link, summary, PASS/FAIL)
   const attempt = parseProviderReceipt(wip.providerOutput, slip.id);
   const summary = attempt.summary ?? slip.title;
+  const blockedReason = "reason" in wip ? (wip as unknown as { reason?: string }).reason : undefined;
   const roomPost = runSummaryPost(
     slip,
     prResult.prUrl,
     prResult.prNumber,
     wip.testPass,
     wip.blocked,
-    "reason" in wip ? (wip as unknown as { reason?: string }).reason : undefined,
+    blockedReason,
     summary,
   );
   log(`[${slip.id}] posting room summary`);
@@ -178,14 +204,26 @@ async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[])
     prNumber: prResult.prNumber,
     testPass: wip.testPass,
     blocked: wip.blocked,
-    reason: "reason" in wip ? (wip as unknown as { reason?: string }).reason : undefined,
+    reason: blockedReason,
     summary,
     filesChanged: wip.filesTouched.length,
     budgetMin: slip.time_budget_minutes,
     spentMin,
   };
   appendLedger(entry);
+
+  // 6. an open PR registers the task for the gates (receipts + CI + approve)
+  if (prResult.ok && prResult.prNumber !== null) {
+    ctx.registry.set(slip.id, {
+      taskId: slip.id,
+      branch: `shift/${slip.id}`,
+      prNumber: prResult.prNumber,
+      prUrl: prResult.prUrl,
+    });
+  }
+
   log(`[${slip.id}] done — ledger appended`);
+  return { blocked: wip.blocked, reason: blockedReason, testPass: wip.testPass, prOk: prResult.ok };
 }
 
 /** Handle one goal message: watch for slips, then process them in sequence. */
@@ -227,16 +265,53 @@ async function handleGoal(ctx: NightContext, msg: AddressedMessage, log: (...a: 
   log(`slips ready: ${slips.length} slip(s): ${slips.map((s) => s.id).join(", ")}`);
   await client.postMessage(
     roomId,
-    `📋 Slips ready — ${slips.length} task(s) tonight:\n` +
+    `📋 Slips ready — ${slips.length} task(s) tonight (processing up to ${ctx.limits.maxSlips}):\n` +
       slips.map((s, i) => `${i + 1}. \`${s.id}\` ${s.title} → @${s.assignee}`).join("\n"),
   );
 
-  for (const slip of slips) {
-    await processSlip(ctx, slip, log);
-  }
+  // budgeted night: up to N slips sequentially, per-slip wall-clock deadline,
+  // block-with-reason and CONTINUE on timeout (PHASE-PLAN 3.2)
+  const { outcomes } = await runBudgetedNight(
+    slips,
+    ctx.limits,
+    (slip) => ({
+      p: processSlip(ctx, slip, log).catch((err) => ({
+        blocked: true,
+        reason: `slip crashed: ${String(err).slice(0, 160)}`,
+        testPass: null as boolean | null,
+        prOk: false,
+      })),
+    }),
+    {
+      log,
+      onCapped: async (slip, ordinal) => {
+        appendGateEvent("block", { task: slip.id, why: `night cap ${ctx.limits.maxSlips} — slip #${ordinal} not claimed tonight` });
+        await client.postMessage(
+          roomId,
+          `🛏 \`${slip.id}\` — capped: the night processes at most ${ctx.limits.maxSlips} task(s); this one stays in the backlog.`,
+        );
+      },
+      onDeadline: async (slip, deadlineMin) => {
+        appendGateEvent("block", { task: slip.id, why: `slip deadline ${deadlineMin}min exceeded — worker stopped, night continues` });
+        await client.postMessage(
+          roomId,
+          `⏰ \`${slip.id}\` — slip deadline of ${deadlineMin} min (budget ${slip.time_budget_minutes} min + grace) exceeded. The worker was stopped and **${slip.id}** is blocked; the night continues with the next slip.`,
+        );
+      },
+      outcomeOf: (_slip, result) => {
+        const r = result as SlipRunResult | undefined;
+        if (!r || typeof r !== "object" || typeof (r as SlipRunResult).blocked !== "boolean") {
+          return { status: "error" as const, reason: "slip produced no result record" };
+        }
+        return r.blocked
+          ? { status: "blocked" as const, reason: r.reason ?? "blocked" }
+          : { status: "done" as const, reason: null };
+      },
+    },
+  );
 
-  log("all slips processed for this goal");
-  await client.postMessage(roomId, `🌙 Night shift complete — ${slips.length} task(s) processed. Check PRs above.`);
+  log(`budgeted night complete: ${outcomes.map((o) => `${o.taskId}=${o.status}`).join(", ")}`);
+  await client.postMessage(roomId, nightRosterPost("🌙 Night shift complete — outcomes in order:", outcomes));
 }
 
 // ---- main entry point -------------------------------------------------------
@@ -271,11 +346,25 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // ---- gate registry (ledger is machine truth; gates survive restarts) --------
+  const registry = rebuildOpenTasks(ledgerPath());
+  const limits = readNightLimits(rawEnv);
+  if (registry.size > 0) {
+    log(`gate registry: ${registry.size} open task(s) from the ledger: ${[...registry.keys()].join(", ")}`);
+  }
+  log(`night limits: ${limits.maxSlips} slip(s) max, +${Math.round(limits.graceMs / 60_000)} min grace per slip`);
+
   log(`starting — agent ${cfg.agentId} in room ${roomId} (provider: ${cfg.provider})`);
 
   // ---- Switch client ----------------------------------------------------------
-  let busy = false;
-  const ctx: NightContext = { cfg, client: null as unknown as SwitchClient, roomId, busy };
+  const ctx: NightContext = {
+    cfg,
+    client: null as unknown as SwitchClient,
+    roomId,
+    busy: false,
+    registry,
+    limits,
+  };
 
   const client = new SwitchClient(cfg, {
     onConnection: (up, detail) => log(`connection ${up ? "UP" : "down"}: ${detail}`),
@@ -291,7 +380,21 @@ export async function main(): Promise<void> {
 
   const listener = new Listener({
     onAddressed: (msg) => {
-      if (!msg.isHuman) return;        // only humans post tonight: goals
+      if (!msg.isHuman) return;        // humans post goals + gate commands
+
+      // gate commands (§4.4) run even while a night is in flight
+      const gate = parseGateCommand(msg.body);
+      if (gate) {
+        handleGateCommand(
+          { cfg, client, roomId, registry, by: msg.sender, },
+          gate,
+          { log },
+        ).catch((err) => {
+          log(`gate command error: ${String(err)}`);
+        });
+        return;
+      }
+
       if (!isGoal(msg.body)) return;   // ignore non-goal messages
 
       if (ctx.busy) {

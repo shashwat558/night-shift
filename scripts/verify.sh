@@ -97,6 +97,13 @@ else
     fail "phase-2 checks failed (see node scripts/p2-checks.mjs)"
 fi
 
+# phase-3 additions: gate grammar/decision table/receipt validator/budget machine offline
+if node scripts/p3-checks.mjs; then
+    pass "phase-3 offline checks (gate logic, needs-eyes, budget state machine)"
+else
+    fail "phase-3 checks failed (see node scripts/p3-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"
