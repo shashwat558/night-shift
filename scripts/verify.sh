@@ -104,6 +104,13 @@ else
     fail "phase-3 checks failed (see node scripts/p3-checks.mjs)"
 fi
 
+# phase-4 starting checks: branch overlap and claim decision state machine
+if node scripts/p4-checks.mjs; then
+    pass "phase-4 collision scanner and claim orderer"
+else
+    fail "phase-4 checks failed (see node scripts/p4-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

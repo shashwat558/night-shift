@@ -493,3 +493,23 @@ use an ES2022-compatible loop instead of `findLastIndex`; and judge a large
 WebSocket send by actual received bytes, since `socket.write(false)` signals
 backpressure while the frame is still queued. The receipt/transport regression
 checks were rerun after both corrections.
+
+## Phase 4 underway — 2026-11-05
+
+The implementation starts with `supervisor/src/negotiation.ts`: fetch actual
+changed files on open PR branches, find their intersection, parse one claim
+per worker per round (three lines maximum), check that each named file is in
+the actual overlap, agree on a first task only if both claims match, and
+escalate contradictory or false claims. The supervisor now accepts an
+addressed `negotiate <task-id> <task-id>` command, opens the collision thread,
+collects distinct agent senders, posts round 2 after a bad round 1, and
+records a `negotiation_result` when an order is agreed or escalation is needed.
+Fixture repos test the branch scan; decision tests cover consistent claims,
+contradiction, and a false file claim. `verify.sh` runs the Phase 4 checks.
+
+The curated collision path is `src/app.js`: `target/BACKLOG.md` and the real
+app use it. The older `src/index.js` mention in `docs/PHASE-PLAN.md` is
+stale. The Phase 4 exit is still pending: BACKLOG-5/6 PRs, a live two-worker
+negotiation, rebase/retest of the second PR, ordered landing, and tag
+`phase/4`. The provider availability limit from Phase 3 still applies; any
+assisted live preparation must be disclosed in receipts and room evidence.

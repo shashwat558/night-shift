@@ -52,6 +52,8 @@ import {
   type NightLimits,
 } from "./night.js";
 import type { Slip } from "./slips.js";
+import { scanCollisions, parseClaim, decideClaims, collisionPrompt, type Collision, type Claim } from "./negotiation.js";
+import { exec } from "./exec.js";
 
 // ---- ledger ------------------------------------------------------------------
 
@@ -386,10 +388,56 @@ export async function main(): Promise<void> {
   });
   ctx.client = client;
 
+  let negotiation: { collision: Collision; round: 1 | 2; claims: Map<string, { sender: string; claim: Claim }> } | null = null;
+  const beginNegotiation = async (a: string, b: string): Promise<void> => {
+    if (negotiation) { await client.postMessage(roomId, "A collision negotiation is already open."); return; }
+    const tasks = [registry.get(a), registry.get(b)];
+    if (!tasks[0] || !tasks[1] || a === b) { await client.postMessage(roomId, `Unknown or duplicate open tasks: ${a}, ${b}`); return; }
+    const fetched = await exec("git", ["fetch", "--quiet", "origin"], cfg.targetDir, 60_000);
+    if (!fetched.ok) { await client.postMessage(roomId, `Collision scan blocked: git fetch failed (${fetched.output.slice(-150)})`); return; }
+    const matches = await scanCollisions(cfg.targetDir, [tasks[0], tasks[1]]);
+    if (!matches.length) { await client.postMessage(roomId, `${a} and ${b} have no changed files in common.`); return; }
+    negotiation = { collision: matches[0]!, round: 1, claims: new Map() };
+    appendGateEvent("negotiation", { task: a, opponent: b, paths: matches[0]!.paths, round: 1 });
+    await client.postMessage(roomId, collisionPrompt(matches[0]!, 1));
+  };
+  const receiveClaim = async (msg: AddressedMessage): Promise<void> => {
+    const session = negotiation;
+    if (!session) return;
+    const ids = [session.collision.left.taskId, session.collision.right.taskId];
+    for (const id of ids) {
+      const claim = parseClaim(msg.body, id, session.round);
+      if (!claim || session.claims.has(id)) continue;
+      if ([...session.claims.values()].some(v => v.sender === msg.sender)) return;
+      session.claims.set(id, { sender: msg.sender, claim });
+      if (session.claims.size < 2) return;
+      const decision = decideClaims(session.collision, [...session.claims.values()].map(v => v.claim));
+      if (decision.kind === "order") {
+        appendGateEvent("negotiation_result", { task: ids[0], opponent: ids[1], agreed_order: decision.order, path: decision.path });
+        await client.postMessage(roomId, `🤝 Agreed landing order for ${decision.path}: ${decision.order.join(" → ")}. First PR lands, then second rebases and re-tests before its gate.`);
+        negotiation = null;
+      } else if (session.round === 1) {
+        await client.postMessage(roomId, `Round 1 needs clarification: ${decision.reason}. Claims: ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
+        session.round = 2; session.claims.clear();
+        await client.postMessage(roomId, collisionPrompt(session.collision, 2));
+      } else {
+        appendGateEvent("negotiation_result", { task: ids[0], opponent: ids[1], status: "escalated", why: decision.reason });
+        await client.postMessage(roomId, `👀 Collision escalated: ${decision.reason}. ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
+        negotiation = null;
+      }
+      return;
+    }
+  };
+
   const listener = new Listener({
     onAddressed: (msg) => {
-      if (!msg.isHuman) return;        // humans post goals + gate commands
+      if (!msg.isHuman) { void receiveClaim(msg); return; }        // humans post goals + gate commands
 
+      const startCollision = /^(?:@shift-supervisor\s+)?negotiate\s+(\S+)\s+(\S+)$/i.exec(msg.body);
+      if (startCollision) {
+        void beginNegotiation(startCollision[1]!, startCollision[2]!).catch(err => log(`negotiation error: ${String(err)}`));
+        return;
+      }
       // gate commands (§4.4) run even while a night is in flight
       const gate = parseGateCommand(msg.body);
       if (gate) {
