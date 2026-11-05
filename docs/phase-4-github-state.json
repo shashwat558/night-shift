@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-11-05T18:39:14.392Z",
+  "main": "0e6c2ea48d906e01e89115b0f38f2bdf3c058048",
+  "prs": [
+    {
+      "headRefName": "shift/B-20261105-04",
+      "headRefOid": "044d4df0a5fb41a29afb4951a477cbe81207b2b1",
+      "isDraft": false,
+      "mergedAt": "2026-11-05T15:08:54Z",
+      "number": 4,
+      "state": "MERGED",
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-11-05T15:03:26Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/shashwat558/nightshift-target/actions/runs/42051026635/job/127326848455",
+          "name": "test",
+          "startedAt": "2026-11-05T15:03:19Z",
+          "status": "COMPLETED",
+          "workflowName": "ci"
+        }
+      ],
+      "url": "https://github.com/shashwat558/nightshift-target/pull/4"
+    },
+    {
+      "headRefName": "shift/B-20261105-05",
+      "headRefOid": "b6919f1a05ec6a8a25b38122394557057d2a0630",
+      "isDraft": false,
+      "mergedAt": "2026-11-05T18:36:58Z",
+      "number": 5,
+      "state": "MERGED",
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-11-05T18:26:12Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/shashwat558/nightshift-target/actions/runs/42084174278/job/127444727008",
+          "name": "test",
+          "startedAt": "2026-11-05T18:26:06Z",
+          "status": "COMPLETED",
+          "workflowName": "ci"
+        }
+      ],
+      "url": "https://github.com/shashwat558/nightshift-target/pull/5"
+    }
+  ]
+}

@@ -132,7 +132,7 @@ P3 exit: all three outcomes live+visible; verify green.
     claims vs actual diff; consistency ⇒ ordered landing (merge first, then
     second rebases, re-tests, posts updated receipt, merges);
     contradiction ⇒ escalate with side-by-side
-4.2 BACKLOG items 5+6 collide on src/index.js by design
+4.2 BACKLOG items 5+6 collide on src/app.js by design
 4.3 Live demo run capturing negotiation + landing order
 4.4 verify.sh: fixture diff overlap scanner; orderer state machine tests;
     commit; tag `phase/4`

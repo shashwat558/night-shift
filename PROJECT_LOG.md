@@ -509,7 +509,32 @@ contradiction, and a false file claim. `verify.sh` runs the Phase 4 checks.
 
 The curated collision path is `src/app.js`: `target/BACKLOG.md` and the real
 app use it. The older `src/index.js` mention in `docs/PHASE-PLAN.md` is
-stale. The Phase 4 exit is still pending: BACKLOG-5/6 PRs, a live two-worker
-negotiation, rebase/retest of the second PR, ordered landing, and tag
-`phase/4`. The provider availability limit from Phase 3 still applies; any
+stale. The Phase 4 exit was completed in the follow-up below. The provider availability limit from Phase 3 still applies; any
 assisted live preparation must be disclosed in receipts and room evidence.
+
+### Phase 4 live completion (Nov 5–6)
+
+BACKLOG-5/6 were prepared on separate branches from origin/main, with a
+failing HTTP regression before each fix and 9/9 passing after. Both drafts
+were opened with production receipt rendering and green GitHub CI. The
+supervisor fetched the two branch diffs and found their exact shared file,
+`src/app.js`. Two disclosed scripted worker-bot claims agreed that stats
+(B-20261105-04) lands first. The supervisor posted the order in-room and
+recorded `negotiation_result`.
+
+The human gate merged PR #4 first. PR #5 rebased onto that main and had an
+actual `src/app.js` conflict; the resolution preserved both mounts. Tests
+passed 10/10, the branch was pushed with lease, the receipt was refreshed,
+and CI passed. The second human gate merged PR #5. Main now serves both
+`/stats` and `/version`. `docs/phase-4-live-test.md` links the raw room and
+GitHub snapshots. No autonomous worker claim is made: provider accounts
+remained unavailable, so Codex prepared code and scripted claims under the
+worker bot identities after disclosing that in-room and in PR receipts.
+
+The first receipt update attempt was interrupted; a retry through `gh pr
+edit` failed on a deprecated Projects Classic GraphQL field. GitHub REST
+updated the body. Two premature `receipt_ok` ledger entries were called out
+with a later error event; only the later `validated: true` event marks the
+confirmed body. Gate code now refuses the second negotiated merge until the
+first has merged, a validated post-rebase receipt exists, and the branch is
+based on current main. Its refusal path has an offline test.

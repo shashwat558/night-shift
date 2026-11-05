@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 3.)*
+phase actually builds them. *(Last updated: end of phase 4.)*
 
 ## Switch server (built phase 0)
 
@@ -179,7 +179,8 @@ Since phase 2 it also runs `scripts/p2-checks.mjs` (offline): the slips
 parser rejects bad files and round-trips good ones, the receipt renderer
 emits the §4.2 field order, `renderPrBody` puts the receipts block last,
 `parseProviderReceipt` round-trips, `appendLedger` writes valid JSONL, and
-the supervisor unit suite (now 93 tests including gates and night) passes.
+the supervisor unit suite (now 96 tests including gates, night, and
+negotiation) passes.
 Phase 3 adds `scripts/p3-checks.mjs` for gate refusals, exact receipt gaps,
 cap planning, deadline continuation, and registry replay.
 Delete it and nobody can ever again prove the phases keep working.
@@ -232,3 +233,16 @@ message bodies or credentials. Every client process needs its own connection
 id. Typed commands replace reactions because reaction events do not reach
 agents. See `docs/gates-manual.md` and `docs/phase-3-live-test.md` for the
 manual, actual room evidence, and the disclosed assisted PR preparation.
+
+## Collision negotiation (built phase 4)
+
+`supervisor/src/negotiation.ts` compares the changed-file lists of open PR
+branches against `origin/main`. An addressed human `negotiate <task> <task>`
+command starts a room thread when the diffs overlap. The supervisor accepts
+one claim from each distinct agent sender per round, checks the named paths
+against the actual diff, and allows at most two rounds. Matching claims
+produce an agreed landing order; contradictions escalate side by side. The
+ledger records the scan and result. `gates.ts` enforces that an agreed second
+PR waits for the first merge, a validated post-rebase receipt, and a branch
+based on current main; normal receipt and green-CI gates still apply. The
+live BACKLOG-5/6 rehearsal is in `docs/phase-4-live-test.md`.

@@ -589,6 +589,17 @@ export async function handleGateCommand(
     filesAllowed: collectFilesAllowed(pr?.body ?? ""),
     budgetMinutes: inferBudgetMinutes(pr?.body ?? ""),
   });
+  // A negotiated second PR may only land after the first merge and a fresh
+  // rebase/test receipt. The normal gate still checks its own CI at read time.
+  if (gate.verb === "approve") {
+    const orderedGap = await orderedLandingGap(gate.taskId, task.branch, rt.cfg.targetDir, opts.envOverride);
+    if (orderedGap) {
+      const reply = `👀 needs-eyes — ${gate.taskId} waits for ordered landing: ${orderedGap}`;
+      appendGateEvent("needs_eyes", { task: gate.taskId, why: orderedGap });
+      await rt.client.postMessage(rt.roomId, reply);
+      return { action: "refuse_receipt", reply };
+    }
+  }
   const decision = decideGate({
     verb: gate.verb,
     taskId: gate.taskId,
@@ -707,4 +718,25 @@ export function collectFilesAllowed(prBody: string): string[] {
 export function inferBudgetMinutes(prBody: string): number {
   const m = /^- budget:\s*(\d+)\s*\/\s*(\d+)\s*min/m.exec(String(prBody ?? ""));
   return m ? Number(m[2]) : 0;
+}
+
+/** Refuse the second negotiated merge until the first has landed and this
+ * branch includes the new main. A post-rebase receipt event proves retest. */
+export async function orderedLandingGap(taskId: string, branch: string, cwd: string, envOverride?: NodeJS.ProcessEnv): Promise<string | null> {
+  let entries: LedgerLine[];
+  try { entries = readFileSync(ledgerPath(), "utf8").split("\n").filter(Boolean).map(x => JSON.parse(x) as LedgerLine); }
+  catch { return null; }
+  const result = [...entries].reverse().find(e => e.type === "negotiation_result" && Array.isArray(e.refs?.agreed_order) && e.refs.agreed_order[1] === taskId);
+  if (!result) return null;
+  const first = (result.refs?.agreed_order as string[])[0];
+  const merged = [...entries].reverse().find(e => e.type === "gate_result" && e.refs?.task === first && e.refs?.status === "merged" && String(e.ts) > String(result.ts));
+  if (!merged) return `${first} has not merged yet`;
+  const refreshed = [...entries].reverse().find(e => e.type === "receipt_ok" && e.refs?.task === taskId && e.refs?.after_rebase === true && e.refs?.validated === true && String(e.ts) > String(merged.ts));
+  if (!refreshed) return "the second PR has no post-rebase test receipt";
+  const fetched = await exec("git", ["fetch", "--quiet", "origin"], cwd, 60_000, { env: envOverride });
+  if (!fetched.ok) return `cannot refresh branch refs: ${fetched.output.slice(-120)}`;
+  const base = await exec("git", ["merge-base", "origin/main", `origin/${branch}`], cwd, 60_000, { env: envOverride });
+  const main = await exec("git", ["rev-parse", "origin/main"], cwd, 60_000, { env: envOverride });
+  if (!base.ok || !main.ok || base.output.trim() !== main.output.trim()) return "second branch must rebase onto current main";
+  return null;
 }

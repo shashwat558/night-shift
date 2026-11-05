@@ -654,3 +654,29 @@ test("merged rollback fallback reverts remote main without touching the worker b
   assert.equal(git(["rev-parse", "HEAD"]), workerHead);
   assert.equal(git(["--git-dir", origin, "show", "main:feature.txt"]), "base");
 });
+
+
+test("negotiated second approval waits for first merge and refreshed receipt", async () => {
+  const { orderedLandingGap } = await import("../src/gates.js");
+  const guard = withTestLedger();
+  try {
+    writeFileSync(tmpLedger, JSON.stringify({ ts: "2026-11-05T01:00:00Z", type: "negotiation_result", refs: { agreed_order: ["A", "B"] } }) + "\n");
+    assert.match((await orderedLandingGap("B", "shift/B", base)) ?? "", /A has not merged/);
+    writeFileSync(tmpLedger, readFileSync(tmpLedger,"utf8") + JSON.stringify({ ts: "2026-11-05T02:00:00Z", type: "gate_result", refs: { task: "A", status: "merged" } }) + "\n");
+    assert.match((await orderedLandingGap("B", "shift/B", base)) ?? "", /no post-rebase test receipt/);
+    writeFileSync(tmpLedger, readFileSync(tmpLedger, "utf8") + JSON.stringify({ ts: "2026-11-05T03:00:00Z", type: "receipt_ok", refs: { task: "B", after_rebase: true, validated: true } }) + "\n");
+    mkdirSync(shimDir, { recursive: true });
+    writeFileSync(
+      join(shimDir, "git"),
+      [
+        SHIM_SHEBANG,
+        'if [ "$1" = "fetch" ]; then exit 0; fi',
+        'if [ "$1" = "merge-base" ]; then echo abc123; exit 0; fi',
+        'if [ "$1" = "rev-parse" ]; then echo abc123; exit 0; fi',
+        "exit 2",
+      ].join("\n") + "\n",
+      { mode: 0o750 },
+    );
+    assert.equal(await orderedLandingGap("B", "shift/B", base, { ...process.env, PATH: `${shimDir}:${process.env.PATH ?? ""}` }), null);
+  } finally { restoreLedger(guard); }
+});
