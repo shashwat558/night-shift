@@ -150,7 +150,7 @@ export interface SlipRunResult {
 }
 
 /** Run one slip end-to-end: worker run → PR → room post → ledger. */
-async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[]) => void): Promise<SlipRunResult> {
+async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[]) => void, signal?: AbortSignal): Promise<SlipRunResult> {
   const { cfg, client, roomId } = ctx;
 
   // 1. assignment narration + worker ack nudge
@@ -161,7 +161,8 @@ async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[])
 
   // 2. run the headless coder
   log(`[${slip.id}] starting worker run (provider: ${cfg.provider})`);
-  const wip = await runWorker(cfg, slip, log);
+  const wip = await runWorker(cfg, slip, log, { signal });
+  if (signal?.aborted) return { blocked: true, reason: "slip deadline cancelled", testPass: null, prOk: false };
 
   // 3. push + PR (even on blocked — the branch may still have partial work)
   let prResult = { ok: false, prUrl: null as string | null, prNumber: null as number | null, output: "blocked before push" };
@@ -170,11 +171,14 @@ async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[])
     prResult = await createDraftPr(cfg.targetDir, slip, wip, {
       provider: cfg.provider,
       ghRepo: cfg.ghRepo,
+      signal,
     });
     if (!prResult.ok) {
       log(`[${slip.id}] PR failed: ${prResult.output.slice(0, 200)}`);
     }
   }
+
+  if (signal?.aborted) return { blocked: true, reason: "slip deadline cancelled", testPass: null, prOk: false };
 
   // 4. room post (task id, branch, PR link, summary, PASS/FAIL)
   const attempt = parseProviderReceipt(wip.providerOutput, slip.id);
@@ -274,14 +278,18 @@ async function handleGoal(ctx: NightContext, msg: AddressedMessage, log: (...a: 
   const { outcomes } = await runBudgetedNight(
     slips,
     ctx.limits,
-    (slip) => ({
-      p: processSlip(ctx, slip, log).catch((err) => ({
-        blocked: true,
-        reason: `slip crashed: ${String(err).slice(0, 160)}`,
-        testPass: null as boolean | null,
-        prOk: false,
-      })),
-    }),
+    (slip) => {
+      const controller = new AbortController();
+      return {
+        cancel: () => controller.abort(),
+        p: processSlip(ctx, slip, log, controller.signal).catch((err) => ({
+          blocked: true,
+          reason: `slip crashed: ${String(err).slice(0, 160)}`,
+          testPass: null as boolean | null,
+          prOk: false,
+        })),
+      };
+    },
     {
       log,
       onCapped: async (slip, ordinal) => {
@@ -447,6 +455,17 @@ const isEntry =
   (process.argv[1].endsWith("main.js") || process.argv[1].endsWith("main.ts"));
 
 if (isEntry) {
+  process.on("exit", (code) => console.error(`[supervisor] process exiting, code=${code}`));
+  process.on("beforeExit", (code) => console.error(`[supervisor] beforeExit: event loop draining (code=${code})`));
+  process.on("uncaughtException", (err) => {
+    console.error(`[supervisor] uncaughtException: ${String(err)}`);
+    console.error(err?.stack ?? "(no stack)");
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error(`[supervisor] unhandledRejection: ${String(reason)}`);
+    process.exit(1);
+  });
   main().catch((err) => {
     console.error("[supervisor] fatal startup error:", err);
     process.exit(1);

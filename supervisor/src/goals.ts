@@ -23,7 +23,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { parseSlips, type Slip, type SlipsParse } from "./slips.js";
 
-export const GOAL_PREFIX_RE = /^tonight:/i;
+export const GOAL_PREFIX_RE = /^(?:@[A-Za-z0-9][A-Za-z0-9._\/-]*\s+)*tonight:/i;
 
 export function isGoal(body: string): boolean {
   return GOAL_PREFIX_RE.test(body.trim());

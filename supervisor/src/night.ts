@@ -72,6 +72,8 @@ export function slipDeadlineMs(slip: Slip, limits: NightLimits): number {
 export interface ExtendedWork {
   /** The underlying per-slip promise (never rejected). */
   p: Promise<unknown>;
+  /** Stop child processes and prevent subsequent PR side effects. */
+  cancel?: () => void;
 }
 
 export interface ExtendedOutcome {
@@ -89,14 +91,16 @@ export async function raceSlipDeadline(
   deadlineMs: number,
   settleMs = 90_000,
 ): Promise<ExtendedOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const result = await Promise.race([
     work.p.then((value: unknown) => ({ fired: false as const, value })),
     new Promise<{ fired: true; value: null }>((resolve) => {
-      const t = setTimeout(() => resolve({ fired: true, value: null }), deadlineMs);
-      t.unref?.();
+      timer = setTimeout(() => resolve({ fired: true, value: null }), deadlineMs);
     }),
   ]);
+  clearTimeout(timer);
   if (!result.fired) return { result: result.value, timedOut: false };
+  work.cancel?.();
 
   // deadline fired: give the work one bounded settle window (its own kill
   // switches complete collection), then stop waiting either way

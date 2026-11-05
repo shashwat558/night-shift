@@ -74,7 +74,8 @@ Works on an open (draft) PR or an already-merged one:
 
 - open PR → `gh pr close <n>` + branch deleted;
 - merged PR → revert of the merge (gh pr revert, falling back to a manual
-  `git revert -m 1` of the merge commit).
+  `git revert -m 1` of the merge commit in an isolated worktree, then push
+  to main). The revert PR created by gh is merged before success is reported.
 
 Room post:
 ```
@@ -124,3 +125,7 @@ One JSON line each in `supervisor/ledger.jsonl` (machine truth; the room is
 the human view): `gate_result` (with `gate: approved | rolled_back | hold |
 approve_refused_ci | approve_refused_fail`), `merge`, `rollback`,
 `needs_eyes`, `block`, `error`. The 9 AM report replays exactly these.
+
+Goals can be explicitly addressed: `@shift-supervisor tonight: implement BACKLOG 2`.
+Each scratch client must use its own connection id; reusing the live supervisor
+connection id evicts that process.

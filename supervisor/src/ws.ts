@@ -51,9 +51,8 @@ interface ParsedFrame {
 
 export interface WsOptions {
   /**
-   * Supplies the pong payload at inline-answer time (before any event from
-   * the chunk dispatches). The Switch protocol wants {"type":"pong",cursor}.
-   * When absent, RFC 6455 echo semantics apply (pong mirrors the ping body).
+   * Supplies the cursor pong for empty pings, inline before event dispatch.
+   * Non-empty pings always echo their bytes for the RFC keepalive check.
    */
   pongPayload?: () => Buffer | string;
 }
@@ -159,6 +158,9 @@ export class WsClient {
 
   /** Send one text message as a single masked FIN frame (clients MUST mask). */
   sendText(text: string): boolean {
+    if (process.env.SUPERVISOR_WS_DEBUG === "1") {
+      console.error(`[wsdebug] sendText len=${text.length} @${Date.now() % 100000}`);
+    }
     return this.sendRaw(OP_TEXT, Buffer.from(text, "utf8"));
   }
 
@@ -241,6 +243,10 @@ export class WsClient {
   }
 
   private handleFrame(frame: ParsedFrame): void {
+    if (process.env.SUPERVISOR_WS_DEBUG === "1") {
+      const op = frame.opcode === 0x9 ? "PING" : frame.opcode === 0xa ? "PONG" : frame.opcode === 0x8 ? "CLOSE" : frame.opcode === 0x1 ? "TEXT" : String(frame.opcode);
+      console.error(`[wsdebug] recv op=${op} fin=${frame.fin} len=${frame.payload.length} @${Date.now() % 100000}`);
+    }
     switch (frame.opcode) {
       case OP_TEXT: {
         if (frame.fin) {
@@ -266,16 +272,22 @@ export class WsClient {
       }
       case OP_PING: {
         // answer immediately, inline, before any text dispatch of this chunk.
-        // If pongPayload is provided and non-empty, use it; otherwise echo payload (RFC 6455).
-        let pong = frame.payload.length > 125 ? frame.payload.subarray(0, 125) : frame.payload;
-        if (this.opts.pongPayload) {
+        // Empty payload ⇒ Switch wants the JSON pong with the cursor. A ping
+        // carrying a payload (this build sends 4 bytes) must be ECHOed per
+        // RFC 6455 — the server matches the pong on the ping's payload; a
+        // JSON pong here is what trips its keepalive at +40s.
+        let pong: Buffer;
+        if (frame.payload.length === 0 && this.opts.pongPayload) {
           const custom = this.opts.pongPayload();
           const buf = typeof custom === "string" ? Buffer.from(custom, "utf8") : custom;
-          if (buf.length > 0) {
-            pong = buf.length > 125 ? buf.subarray(0, 125) : buf;
-          }
+          pong = buf.length > 125 ? buf.subarray(0, 125) : buf;
+        } else {
+          pong = frame.payload.length > 125 ? frame.payload.subarray(0, 125) : frame.payload;
         }
         this.sendPong(pong);
+        if (process.env.SUPERVISOR_WS_DEBUG === "1") {
+          console.error(`[wsdebug] sent PONG (${pong.length} bytes) @${Date.now() % 100000}`);
+        }
         this.handlers.ping?.(frame.payload);
         return;
       }

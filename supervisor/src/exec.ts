@@ -16,12 +16,14 @@ const OUT_CAP = 400_000;
 
 export interface ExecOptions {
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
   timeoutMs?: number;
 }
 
 export function exec(cmd: string, args: string[], cwd: string, timeoutMs = 120_000, opts: ExecOptions = {}): Promise<ExecResult> {
+  if (opts.signal?.aborted) return Promise.resolve({ ok: false, output: "slip deadline cancelled", exitCode: null, killed: true });
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: opts.env ?? process.env });
+    const child = spawn(cmd, args, { cwd, env: opts.env ?? process.env, detached: true });
     let out = "";
     let err = "";
     const pushLine = (acc: string, d: Buffer, cap: number): string => ((acc + d.toString("utf8")).length > cap ? (acc + d.toString("utf8")).slice(-cap) : acc + d.toString("utf8"));
@@ -31,14 +33,18 @@ export function exec(cmd: string, args: string[], cwd: string, timeoutMs = 120_0
     child.stderr?.on("data", (d: Buffer) => {
       err = pushLine(err, d, 100_000);
     });
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    const kill = (): void => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch {} } };
+    opts.signal?.addEventListener("abort", kill, { once: true });
+    const timer = setTimeout(kill, timeoutMs);
     timer.unref?.();
     child.on("error", (e) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", kill);
       resolve({ ok: false, output: (out + err).slice(-4000), exitCode: null, error: String(e) });
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", kill);
       resolve({
         ok: code === 0 && signal === null,
         output: (out + (err ? `\nSTDERR:\n${err}` : "")).slice(-8192),

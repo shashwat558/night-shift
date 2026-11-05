@@ -92,7 +92,7 @@ test("answers a ping before dispatching events from the same chunk", async (t) =
   assert.equal(conn.maskViolation, false);
 });
 
-test("pongPayload option replaces the RFC echo with caller-supplied bytes", async (t) => {
+test("empty pings use the caller-supplied cursor pong", async (t) => {
   const srv = new FakeSwitchServer();
   t.after(() => srv.close());
   servers.push(srv);
@@ -110,6 +110,31 @@ test("pongPayload option replaces the RFC echo with caller-supplied bytes", asyn
   await until(() => conn.clientFrames.some((f) => f.opcode === 10));
   const pong = conn.clientFrames.find((f) => f.opcode === 10) as { payload: string };
   assert.deepEqual(JSON.parse(pong.payload), { type: "pong", cursor: 42 });
+  assert.equal(conn.maskViolation, false);
+});
+
+test("a ping carrying a payload is echoed even with pongPayload set", async (t) => {
+  // Found live on 2026-11-05: the server's RFC keepalive ping carries a 4-byte
+  // payload and matches the pong on it — answering with JSON trips its
+  // keepalive at +40s ("keepalive ping timeout"). Only EMPTY pings take the
+  // caller's custom pong.
+  const srv = new FakeSwitchServer();
+  t.after(() => srv.close());
+  servers.push(srv);
+  const port = await srv.listen();
+
+  const client = new WsClient(
+    `ws://127.0.0.1:${port}/x`,
+    { authorization: "Bearer k" },
+    { ping: () => {} },
+    { pongPayload: () => JSON.stringify({ type: "pong", cursor: 42 }) },
+  );
+  client.connect();
+  const conn = await firstConn(srv);
+  conn.sendPing(Buffer.from([0xde, 0xad, 0xbe, 0xef]));
+  await until(() => conn.clientFrames.some((f) => f.opcode === 10));
+  const pong = conn.clientFrames.find((f) => f.opcode === 10);
+  assert.deepEqual(pong?.rawPayload, Buffer.from([0xde, 0xad, 0xbe, 0xef]));
   assert.equal(conn.maskViolation, false);
 });
 

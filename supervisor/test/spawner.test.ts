@@ -240,3 +240,25 @@ test("runWorker: unknown provider name returns the block reason immediately", as
 });
 
 void randomUUID;
+
+test("runWorker: outer deadline kills the provider group and skips later commands", async () => {
+  const slip = slipFixture();
+  writeFakeProvider(slip, "waiting for cancellation");
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${shimDir}:${savedPath ?? ""}`;
+  process.env.NSP_FAKE_SLEEP = "60";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 300);
+  try {
+    const start = Date.now();
+    const result = await runWorker(cfg, slip, () => {}, { signal: controller.signal });
+    assert.equal(result.blocked, true);
+    assert.equal(result.timedOut, true);
+    assert.equal(result.testPass, false);
+    assert.ok(Date.now() - start < 3000, "cancelled provider must settle before another slip starts");
+  } finally {
+    clearTimeout(timer);
+    process.env.PATH = savedPath;
+    process.env.NSP_FAKE_SLEEP = "0";
+  }
+});

@@ -216,11 +216,13 @@ export class SwitchClient {
 
   private scheduleReconnect(delay: number): void {
     if (this.stopped || this.reconnectTimer) return;
+    // NOT unref'd: the reconnect is the process's lifeblood. While the socket
+    // is down, every other handle is unref'd — a drain here would kill the
+    // supervisor silently mid-night (found live on 2026-11-05).
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.openSocket();
     }, delay);
-    this.reconnectTimer.unref?.();
   }
 
   private backoffMs(): number {

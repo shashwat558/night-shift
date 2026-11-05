@@ -445,7 +445,8 @@ test("handleGateCommand: approve → ready+merge, ✅ post, registry drop, gate_
       { envOverride: shimEnv({ viewJson: GREEN_VIEW }), log: () => {} },
     );
     assert.equal(decision.action, "merge");
-    // a ⏳ approval post then the ✅ merged post
+    // Report the completed action once, after it succeeds.
+    assert.equal(posts.length, 1);
     const merged = posts.map((p) => p.content).find((c) => c.includes("✅"));
     assert.ok(merged, `no merged post: ${JSON.stringify(posts)}`);
     assert.match(merged ?? "", /PR #7/);
@@ -506,6 +507,8 @@ test("handleGateCommand: rollback ⇒ close + branch delete + 'rolled back: <rea
       { envOverride: shimEnv({ viewJson: GREEN_VIEW }), log: () => {} },
     );
     assert.equal(decision.action, "rollback");
+    assert.equal(posts.length, 1);
+    assert.match(decision.reply, /rolled back: worker touched auth file/);
     const rolled = posts.map((p) => p.content).find((c) => c.includes("rolled back"));
     assert.match(rolled ?? "", /rolled back: worker touched auth file/);
     assert.match(rolled ?? "", /PR #7 closed/);
@@ -607,3 +610,44 @@ test("appendGateEvent writes the §4.3 event shape to LEDGER_PATH", () => {
 });
 
 // test helpers ----------------------------------------------------------------
+
+test("receipt header must match the entire task id and test-log fence must close", () => {
+  const slip = slipFixture();
+  const body = prBodyFor(slip);
+  assert.equal(validateReceiptBlock(body.replace(`receipts — ${slip.id}`, `receipts — ${slip.id}0`), receiptContract(slip)).ok, false);
+  const lines = body.split("\n");
+  const close = lines.findLastIndex((line) => line.trim() === "```");
+  lines.splice(close, 1);
+  assert.ok(validateReceiptBlock(lines.join("\n"), receiptContract(slip)).gaps.includes("test-log fenced block is not closed"));
+});
+
+test("merged rollback fallback reverts remote main without touching the worker branch", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { revertMergedPr } = await import("../src/gates.js");
+  const repo = join(base, "repo");
+  const origin = join(base, "origin.git");
+  mkdirSync(repo);
+  const git = (args: string[], cwd = repo): string => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  git(["init", "--bare", origin]);
+  git(["init", "-b", "main"]);
+  git(["config", "user.name", "rehearsal"]);
+  git(["config", "user.email", "rehearsal@example.invalid"]);
+  writeFileSync(join(repo, "feature.txt"), "base\n");
+  git(["add", "feature.txt"]); git(["commit", "-m", "base"]);
+  git(["remote", "add", "origin", origin]); git(["push", "origin", "main"]);
+  git(["switch", "-c", "feature"]);
+  writeFileSync(join(repo, "feature.txt"), "feature\n");
+  git(["commit", "-am", "feature"]);
+  git(["switch", "main"]); git(["merge", "--no-ff", "feature", "-m", "merge feature"]);
+  const merge = git(["rev-parse", "HEAD"]);
+  git(["push", "origin", "main"]);
+  git(["switch", "-c", "active-worker"]);
+  const workerHead = git(["rev-parse", "HEAD"]);
+  mkdirSync(shimDir);
+  writeFileSync(join(shimDir, "gh"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const result = await revertMergedPr(repo, 7, merge, { ...process.env, PATH: `${shimDir}:${process.env.PATH}` });
+  assert.equal(result.ok, true, result.output);
+  assert.equal(git(["branch", "--show-current"]), "active-worker");
+  assert.equal(git(["rev-parse", "HEAD"]), workerHead);
+  assert.equal(git(["--git-dir", origin, "show", "main:feature.txt"]), "base");
+});

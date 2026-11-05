@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 2.)*
+phase actually builds them. *(Last updated: end of phase 3.)*
 
 ## Switch server (built phase 0)
 
@@ -97,7 +97,7 @@ agent protocol WebSocket (scope=all, filter=all, answers pings, resumes its
 cursor), listens for the human's `tonight:` goals, delegates slips to
 night-lead, spawns headless workers, opens draft PRs with the receipts
 block, posts results to the room, gates merges behind human commands with
-CI green (phase 3), referees worker file collisions (phase 4), and renders
+CI green (built phase 3), referees worker file collisions (phase 4), and renders
 the 9 AM shift report from `supervisor/ledger.jsonl` (phase 5). Its only
 runtime dependencies are Node's own WebSocket/fetch/fs. Delete it and
 taskslips pile up unread: nothing merges, nothing is blocked, no report at
@@ -110,7 +110,8 @@ taskslips pile up unread: nothing merges, nothing is blocked, no report at
 - `src/ws.ts` — dependency-free RFC 6455 WebSocket client over
   `http.request` (upgrade event). Sends the `Authorization: Bearer <key>`
   header that Node's built-in `WebSocket` cannot attach. Answers pings with
-  the caller's pong payload BEFORE dispatching events (the cursor guarantee).
+  matching bytes for non-empty RFC keepalive pings; empty pings use the
+  caller's cursor pong BEFORE dispatching events.
   Reconnects on drop; refuses takeover. Fully tested with an in-process
   server (`test/ws-harness.ts`).
 - `src/switchclient.ts` — connection lifecycle on top of `ws.ts`. Builds
@@ -178,7 +179,9 @@ Since phase 2 it also runs `scripts/p2-checks.mjs` (offline): the slips
 parser rejects bad files and round-trips good ones, the receipt renderer
 emits the §4.2 field order, `renderPrBody` puts the receipts block last,
 `parseProviderReceipt` round-trips, `appendLedger` writes valid JSONL, and
-all 46 unit tests (slips, prs, goals, spawner, switchclient, ws) pass.
+the supervisor unit suite (now 93 tests including gates and night) passes.
+Phase 3 adds `scripts/p3-checks.mjs` for gate refusals, exact receipt gaps,
+cap planning, deadline continuation, and registry replay.
 Delete it and nobody can ever again prove the phases keep working.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)
@@ -200,3 +203,32 @@ agent's template persona, listens on the SSE transport, acts only on
 addressed messages, answers with `opencode run` words, and self-enforces
 the addressing rule. Delete the pair and standing the crew up after a
 machine reset becomes guesswork.
+
+## Trust gates + budgeted night (built phase 3)
+
+`supervisor/src/gates.ts` parses addressed human `approve`, `rollback`, and
+`hold` commands, validates the PR receipts against the receipt schema, and
+reads current CI through `gh pr view`. Approval requires complete receipts,
+PASS tests, and green CI at that read. Receipt gaps produce a needs-eyes
+reply naming each gap. Approval makes a draft ready and merges it; hold
+keeps or restores draft status. Rollback closes a draft and deletes its
+remote branch, or lands a revert of a merged PR. The fallback reverts in
+an isolated worktree and pushes main without changing a worker's checkout.
+Merged tasks remain discoverable for rollback through ledger history.
+Gate outcomes append `gate_result`, `merge`, `rollback`, `needs_eyes`, or
+`error` events. The open registry is rebuilt from the ledger on startup.
+
+`src/night.ts` processes slips sequentially with `NIGHT_MAX_SLIPS` (default
+5) and a whole-slip deadline of budget plus `NIGHT_GRACE_MS` (default
+180000; clamped to 5 seconds–30 minutes). Capped slips are named. A deadline
+aborts worker and command process groups, prevents subsequent PR operations,
+records a block reason, and continues. The provider's budget timer remains
+the first kill switch. Cancellation flows through `main.ts`, `spawner.ts`,
+`exec.ts`, and `prs.ts`; offline tests exercise real process cancellation.
+
+The connection reconnect timer keeps the supervisor alive while its socket
+is down. Optional `SUPERVISOR_WS_DEBUG=1` logs frame types and lengths, never
+message bodies or credentials. Every client process needs its own connection
+id. Typed commands replace reactions because reaction events do not reach
+agents. See `docs/gates-manual.md` and `docs/phase-3-live-test.md` for the
+manual, actual room evidence, and the disclosed assisted PR preparation.

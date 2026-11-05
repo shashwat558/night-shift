@@ -16,6 +16,8 @@ test("goal grammar", () => {
   assert.equal(isGoal("tonight: implement BACKLOG item 1"), true);
   assert.equal(isGoal("  TONIGHT: Lisa needs it by 9am"), true, "case-insensitive");
   assert.equal(isGoal("@nightshift-night-lead please start"), false);
+  assert.equal(isGoal("@shift-supervisor tonight: implement BACKLOG 2"), true);
+  assert.equal(goalText("@shift-supervisor tonight: implement BACKLOG 2"), "implement BACKLOG 2");
   assert.equal(isGoal("the meeting tonight: pizza"), false);
   assert.equal(GOAL_PREFIX_RE.test("tonight: x"), true);
   assert.equal(goalText("tonight: implement NEXT-1"), "implement NEXT-1");

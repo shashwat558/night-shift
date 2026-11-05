@@ -202,3 +202,15 @@ test("nightRosterPost: honest marks per status, task ids in order", () => {
   assert.match(post, /🛏 `B-4`/);
   assert.match(post, /⚠️ `B-5`/);
 });
+
+test("deadline invokes cancellation before the next slip starts", async () => {
+  let cancelFirst!: () => void;
+  let stopped = false;
+  const work: ExtendedWork = {
+    p: new Promise((resolve) => { cancelFirst = () => { stopped = true; resolve(null); }; }),
+    cancel: () => cancelFirst(),
+  };
+  const out = await raceSlipDeadline(work, 20, 100);
+  assert.equal(out.timedOut, true);
+  assert.equal(stopped, true);
+});

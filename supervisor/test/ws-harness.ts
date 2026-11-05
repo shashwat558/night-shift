@@ -23,6 +23,7 @@ export interface ClientFrame {
   fin: boolean;
   masked: boolean;
   payload: string;
+  rawPayload: Buffer;
 }
 
 export interface HarnessConnection {
@@ -117,7 +118,7 @@ export class FakeSwitchServer {
       socket.on("data", (buf: Buffer) => {
         acc = buf.length > 0 ? Buffer.concat([acc, buf]) : acc;
         const record = (opcode: number, payload: Buffer, fin: boolean, masked: boolean): void => {
-          const cf: ClientFrame = { opcode, fin, masked, payload: payload.toString("utf8") };
+          const cf: ClientFrame = { opcode, fin, masked, payload: payload.toString("utf8"), rawPayload: Buffer.from(payload) };
           conn.clientFrames.push(cf);
           this.opts.onClientFrame?.(conn, cf);
         };

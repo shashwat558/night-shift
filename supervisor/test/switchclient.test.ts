@@ -261,3 +261,23 @@ test("gap frame adopts resumed_at as the cursor", async (t) => {
   assert.equal(client.cursor, 33, "resumed_at taken as the new cursor");
   client.stop();
 });
+
+test("reconnect timer keeps an otherwise idle supervisor process alive", async (t) => {
+  const { spawn } = await import("node:child_process");
+  const srv = new FakeSwitchServer();
+  t.after(() => srv.close());
+  servers.push(srv);
+  const port = await srv.listen();
+  const cfg = testConfig({ apiBase: `http://127.0.0.1:${port}`, agentId: "agent-1", agentKey: "test-key", roomId: ROOM });
+  const moduleUrl = new URL("../src/switchclient.js", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "-e",
+    `import { SwitchClient } from ${JSON.stringify(moduleUrl)}; new SwitchClient(${JSON.stringify(cfg)}, {}).start();`],
+    { env: { ...process.env, SUPERVISOR_STATE_PATH: statePath() }, stdio: "ignore" });
+  t.after(() => { child.kill("SIGKILL"); });
+  const conn = await firstConn(srv);
+  conn.sendText(connState(1, 1));
+  await wait(30);
+  conn.destroy();
+  await until(() => srv.connections.length >= 2, 6000);
+  assert.equal(child.exitCode, null, "process must survive socket drop to perform reconnect");
+});

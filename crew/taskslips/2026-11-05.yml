@@ -1,0 +1,29 @@
+slips:
+  - id: B-20261105-02
+    backlog_ref: BACKLOG-2
+    title: Return 404 for a missing pet
+    assignee: nightshift-worker-1
+    scope: Return JSON 404 for a missing pet without changing the happy path.
+    files_allowed:
+      - src/routes/pets.js
+      - test/pets.test.js
+    acceptance:
+      - GET /pets/999999 returns 404 with error not_found and the requested id
+      - GET /pets/1 still returns the seeded pet
+      - Existing tests pass
+    time_budget_minutes: 8
+    notes: Manually prepared gate rehearsal because both configured provider accounts are unavailable.
+  - id: B-20261105-03
+    backlog_ref: BACKLOG-3
+    title: Fix pagination offset
+    assignee: nightshift-worker-2
+    scope: Write a failing page-two test then correct the pagination offset.
+    files_allowed:
+      - src/pagination.js
+      - test/pets.test.js
+    acceptance:
+      - GET /pets?page=2&limit=3 returns ids 4, 5, 6
+      - Page one remains ids 1, 2, 3
+      - Existing tests pass
+    time_budget_minutes: 8
+    notes: Manually prepared gate rehearsal because both configured provider accounts are unavailable.

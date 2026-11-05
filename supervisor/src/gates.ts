@@ -17,7 +17,8 @@
 // The typed command is the machine truth (docs delta: reaction events do not
 // reach agents — one of the three recorded P0 docs deltas).
 
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, readFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exec } from "./exec.js";
 import type { CiState } from "./prs.js";
@@ -78,6 +79,7 @@ export interface ParsedReceiptBlock {
   order: ReceiptFieldName[];
   /** Raw tail content between the test-log fences ("" when none). */
   testLogBody: string;
+  incompleteFence?: boolean;
 }
 
 /** Pull the receipts block for `taskId` out of a PR body (the schema's "last
@@ -85,7 +87,7 @@ export interface ParsedReceiptBlock {
  *  after the colon, except test-log whose RAW tail lives between the fences. */
 export function parseReceiptBlock(prBody: string, taskId: string): ParsedReceiptBlock {
   const lines = String(prBody ?? "").split("\n");
-  const start = lines.findIndex((l) => l.includes("#### receipts") && l.includes(taskId));
+  const start = lines.findIndex((l) => l.trim() === `#### receipts — ${taskId}`);
   if (start === -1) return { found: false, fields: {}, order: [], testLogBody: "" };
 
   // the block ends at the next receipts header (defensive: there is only one)
@@ -135,7 +137,7 @@ export function parseReceiptBlock(prBody: string, taskId: string): ParsedReceipt
       }
     }
   }
-  return { found: true, fields, order, testLogBody };
+  return { found: true, fields, order, testLogBody, incompleteFence: testLogState !== "off" };
 }
 
 export interface ReceiptCheck {
@@ -192,6 +194,8 @@ export function validateReceiptBlock(prBody: string, contract: ReceiptContract):
   } else if (block.testLogBody.trim() === "") {
     gaps.push("test-log fenced block is empty — the RAW runner tail must be inside it");
   }
+
+  if (block.incompleteFence) gaps.push("test-log fenced block is not closed");
 
   // tests: literally PASS or FAIL
   const tests = block.fields["tests"];
@@ -438,23 +442,31 @@ export async function closePr(cwd: string, prNumber: number, branch: string, env
   if (!close.ok) return { ok: false, output: `gh pr close failed: ${close.output.slice(-300)}` };
   const del = await exec("git", ["push", "origin", "--delete", branch], cwd, 60_000, { env: envOverride });
   const output = `closed PR #${prNumber}${del.ok ? "" : `; branch delete failed: ${del.output.slice(-200)}`}`;
-  return { ok: true, output };
+  return { ok: del.ok, output };
 }
 
 /** Rollback path for an already-MERGED PR: revert the merge commit on main. */
 export async function revertMergedPr(cwd: string, prNumber: number, mergeCommit: string, envOverride?: NodeJS.ProcessEnv): Promise<{ ok: boolean; output: string }> {
-  return exec(
-    "gh",
-    ["pr", "revert", String(prNumber)],
-    cwd,
-    120_000,
-    { env: envOverride },
-  ).then((r) => (r.ok
-    ? r
-    : exec("git", ["revert", "-m", "1", "--no-edit", mergeCommit, "--quiet"], cwd, 120_000, { env: envOverride }).then((g) => ({
-        ok: g.ok,
-        output: g.ok ? `git revert ${mergeCommit.slice(0, 10)} ok` : `gh pr revert + git revert both failed: ${g.output.slice(-300)}`,
-      }))));
+  // gh pr revert opens a revert PR; it does not land the revert itself.
+  const proposed = await exec("gh", ["pr", "revert", String(prNumber)], cwd, 120_000, { env: envOverride });
+  if (proposed.ok) {
+    const url = proposed.output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/)?.[0];
+    if (!url) return { ok: false, output: "revert PR created but its URL was not returned; review GitHub before retrying" };
+    return exec("gh", ["pr", "merge", url, "--merge"], cwd, 120_000, { env: envOverride });
+  }
+  // Work in isolation: a rollback must never revert on a worker's branch.
+  const status = await exec("git", ["fetch", "origin", "main"], cwd, 60_000, { env: envOverride });
+  if (!status.ok) return status;
+  const scratch = join(mkdtempSync(join(tmpdir(), "nightshift-revert-")), "worktree");
+  const add = await exec("git", ["worktree", "add", "--detach", scratch, "origin/main"], cwd, 60_000, { env: envOverride });
+  if (!add.ok) return add;
+  try {
+    const reverted = await exec("git", ["revert", "-m", "1", "--no-edit", mergeCommit], scratch, 120_000, { env: envOverride });
+    if (!reverted.ok) return reverted;
+    return await exec("git", ["push", "origin", "HEAD:main"], scratch, 120_000, { env: envOverride });
+  } finally {
+    await exec("git", ["worktree", "remove", "--force", scratch], cwd, 60_000, { env: envOverride });
+  }
 }
 
 // ---- 6. the open-task registry (ledger.jsonl is the machine truth) --------------
@@ -549,7 +561,19 @@ export async function handleGateCommand(
   opts: { envOverride?: NodeJS.ProcessEnv; log?: (...a: unknown[]) => void } = {},
 ): Promise<GateDecision> {
   const log = opts.log ?? (() => {});
-  const task = rt.registry.get(gate.taskId) ?? null;
+  let task = rt.registry.get(gate.taskId) ?? null;
+  // Successful merges leave the open registry but remain rollback candidates.
+  if (!task && gate.verb === "rollback") {
+    try {
+      const entries = readFileSync(ledgerPath(), "utf8").trim().split("\n").map((line) => JSON.parse(line) as LedgerLine);
+      for (const e of entries.reverse()) {
+        if (e.taskId === gate.taskId && typeof e.prNumber === "number" && typeof e.branch === "string") {
+          task = { taskId: gate.taskId, prNumber: e.prNumber, branch: e.branch, prUrl: typeof e.prUrl === "string" ? e.prUrl : null };
+          break;
+        }
+      }
+    } catch { /* unknown task reply below */ }
+  }
 
   // unknown task → honest post, no ledger event (nothing happened)
   if (!task) {
@@ -600,6 +624,7 @@ export async function handleGateCommand(
     const reason = gate.reason ?? "human commanded rollback";
     if (rolled.ok) {
       extraPost = rolledBackPostFor(gate.taskId, reason, task.prNumber, pr?.state === "MERGED");
+      appendGateEvent("rollback", { task: gate.taskId, pr: task.prNumber, why: reason });
       appendGateEvent("gate_result", { task: gate.taskId, gate: "rolled_back", by: rt.by ?? "human", ci: pr?.ci.state ?? "unknown", status: "rolled_back", reason });
       rt.registry.delete(gate.taskId);
     } else {
@@ -608,7 +633,17 @@ export async function handleGateCommand(
       decision.reply = extraPost;
     }
   } else if (decision.action === "hold") {
-    appendGateEvent("gate_result", { task: gate.taskId, gate: "hold", by: rt.by ?? "human", ci: pr?.ci.state ?? "unknown", status: "held" });
+    if (pr?.state !== "OPEN") {
+      decision.action = "unknown_pr";
+      decision.reply = `⛔ hold **${gate.taskId}** refused — PR is ${pr?.state ?? "unknown"}.`;
+    } else if (!pr.isDraft) {
+      const draft = await exec("gh", ["pr", "ready", String(task.prNumber), "--undo"], rt.cfg.targetDir, 60_000, { env: opts.envOverride });
+      if (!draft.ok) {
+        decision.action = "unknown_pr";
+        decision.reply = `⛔ hold **${gate.taskId}** could not restore draft: ${draft.output.slice(-200)}`;
+      }
+    }
+    if (decision.action === "hold") appendGateEvent("gate_result", { task: gate.taskId, gate: "hold", by: rt.by ?? "human", ci: pr?.ci.state ?? "unknown", status: "held" });
   } else if (decision.action === "refuse_receipt") {
     if (receipt.testPass === false) {
       appendGateEvent("gate_result", { task: gate.taskId, gate: "approve_refused_fail", by: rt.by ?? "human", ci: pr?.ci.state ?? "unknown", status: "refused" }, "a receipt can never merge with FAIL");
@@ -619,9 +654,9 @@ export async function handleGateCommand(
     appendGateEvent("gate_result", { task: gate.taskId, gate: "approve_refused_ci", by: rt.by ?? "human", ci: ciStateLabel(pr?.ci.state ?? "pending"), status: "refused" }, "approve honored only after CI green");
   }
 
-  const reply = verdictReply(gate, decision.action, decision.reply, receipt);
+  const reply = extraPost ?? verdictReply(gate, decision.action, decision.reply, receipt);
   await rt.client.postMessage(rt.roomId, reply);
-  if (extraPost && extraPost !== reply) await rt.client.postMessage(rt.roomId, extraPost);
+
   log(`gate ${gate.verb} ${gate.taskId} → ${decision.action}`);
   return { ...decision, reply };
 }
@@ -640,7 +675,7 @@ function verdictReply(
 function rolledBackPostFor(taskId: string, reason: string, prNumber: number | null, wasMerged: boolean): string {
   return (
     `♻️ rolled back: ${reason}\n` +
-    `${taskId}: ${wasMerged ? "merge reverted on main" : `PR #${prNumber ?? "?"} closed`} · branch deleted · recorded in the ledger.`
+    `${taskId}: ${wasMerged ? "merge reverted on main" : `PR #${prNumber ?? "?"} closed · branch deleted`} · recorded in the ledger.`
   );
 }
 

@@ -88,7 +88,7 @@ export async function runWorker(
   cfg: Config,
   slip: Slip,
   log: (...a: unknown[]) => void,
-  opts: { budgetMsOverride?: number } = {},
+  opts: { budgetMsOverride?: number; signal?: AbortSignal } = {},
 ): Promise<WipRun> {
   const args = providerArgs(cfg.provider, providerPrompt(slip));
   const wip: WipRun = {
@@ -109,7 +109,7 @@ export async function runWorker(
   }
 
   // 1. clean-worktree check (never steal the crew's uncommitted work)
-  const status = await exec("git", ["status", "--porcelain"], cfg.targetDir);
+  const status = await exec("git", ["status", "--porcelain"], cfg.targetDir, 120_000, { signal: opts.signal });
   if (!status.ok) {
     return { ...wip, blocked: true, reason: `git status failed in target/: ${status.output.slice(-200)}` };
   }
@@ -122,23 +122,23 @@ export async function runWorker(
   }
 
   // 2. branch from origin/main
-  const fetchRes = await exec("git", ["fetch", "--quiet", "origin"], cfg.targetDir, 60_000);
+  const fetchRes = await exec("git", ["fetch", "--quiet", "origin"], cfg.targetDir, 60_000, { signal: opts.signal });
   if (!fetchRes.ok) {
     return { ...wip, blocked: true, reason: `git fetch origin failed: ${fetchRes.output.slice(-300)}` };
   }
-  const checkout = await exec("git", ["checkout", "-q", "-B", wip.branch, "origin/main"], cfg.targetDir);
+  const checkout = await exec("git", ["checkout", "-q", "-B", wip.branch, "origin/main"], cfg.targetDir, 120_000, { signal: opts.signal });
   if (!checkout.ok) {
     return { ...wip, blocked: true, reason: `git checkout -B ${wip.branch} origin/main failed: ${checkout.output.slice(-300)}` };
   }
   log(`worker on branch ${wip.branch} (${cfg.provider}) for ${slip.id}`);
 
   // 3. the provider run, budget kill-switch armed
-  const providerResult = await runProviderWithBudget(cfg.provider, args, slip, cfg.targetDir, log, opts.budgetMsOverride);
+  const providerResult = await runProviderWithBudget(cfg.provider, args, slip, cfg.targetDir, log, opts.budgetMsOverride, opts.signal);
 
   // 4. collect the truth regardless of provider exit (git ops are ours)
-  const nameStatus = await exec("git", ["diff", "--name-only", "origin/main...HEAD"], cfg.targetDir);
+  const nameStatus = await exec("git", ["diff", "--name-only", "origin/main...HEAD"], cfg.targetDir, 120_000, { signal: opts.signal });
   wip.filesTouched = nameStatus.output.split("\n").map((s) => s.trim()).filter(Boolean);
-  const diff = await exec("git", ["diff", "origin/main...HEAD"], cfg.targetDir);
+  const diff = await exec("git", ["diff", "origin/main...HEAD"], cfg.targetDir, 120_000, { signal: opts.signal });
   wip.diff = diff.ok ? diff.output : "";
 
   wip.providerExitCode = providerResult.exitCode;
@@ -154,7 +154,7 @@ export async function runWorker(
   }
 
   // 5. the real test run — the receipt's test-log tail; exit rules PASS/FAIL
-  const test: ExecResult = await exec("npm", ["test"], cfg.targetDir, 120_000);
+  const test: ExecResult = await exec("npm", ["test"], cfg.targetDir, 120_000, { signal: opts.signal });
   wip.testOutput = (test.output || "").trim();
   wip.testPass = test.ok;
   wip.finishedAt = Date.now();
@@ -168,7 +168,9 @@ async function runProviderWithBudget(
   cwd: string,
   log: (...a: unknown[]) => void,
   budgetMsOverride?: number,
+  signal?: AbortSignal,
 ): Promise<{ exitCode: number | null; output: string; timedOut: boolean }> {
+  if (signal?.aborted) return { exitCode: null, output: "slip deadline cancelled", timedOut: true };
   let output = "";
   const budgetMs = budgetMsOverride ?? slip.time_budget_minutes * 60_000;
 
@@ -184,11 +186,17 @@ async function runProviderWithBudget(
       if (done) return;
       done = true;
       clearTimeout(deadline);
+      signal?.removeEventListener("abort", abort);
       if (hardKill) clearTimeout(hardKill);
       clearTimeout(lastResort);
       resolve({ exitCode: code, output: output.slice(-40_000), timedOut });
     };
 
+    const abort = (): void => {
+      timedOut = true;
+      if (child.pid) try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    };
+    signal?.addEventListener("abort", abort, { once: true });
     const deadline = setTimeout(() => {
       if (done) return;
       timedOut = true;

@@ -395,3 +395,95 @@ Live verification on the running stack (Core :8000, Gateway :3100, Mattermost :8
 
 **verify.sh grown:** now also runs `node scripts/p2-checks.mjs` after
 the p1 checks. The whole pipeline exits 0 when every phase-2 check is green.
+
+## Phase 3 — trust gates + budgeted night (2026-11-05)
+
+Phase 3 build landed in `a4629d5`; the final rehearsal/fixes follow in the
+phase-3 completion commit. Before this, `30837cf` committed the outstanding
+P2 pong change. The live run showed that P2's custom-pong rule needed a
+further correction for non-empty RFC keepalive pings.
+
+### 3.1 — receipt checks and human gates
+
+`supervisor/src/gates.ts` implements typed `approve|rollback|hold <task-id>`
+commands, receipt field/order/log validation, exact receipt task-id matching,
+CI rollup read at decision time, and FAIL-test refusal. Missing fields produce
+needs-eyes with exact gaps. Approval runs `gh pr ready` then `gh pr merge
+--merge`; hold preserves or restores draft status. Draft rollback closes the
+PR and deletes the remote branch, reporting deletion failures. Merged rollback
+lands a revert PR or falls back to `git revert -m 1` in an isolated worktree
+and pushes main. A local bare-remote regression proves the fallback updates
+main without changing an active worker branch. Ledger events record gate
+results, merge, rollback, needs-eyes, block, and errors. Open tasks rebuild
+from the ledger; merged task history remains available for rollback.
+
+### 3.2 — budgeted night
+
+`supervisor/src/night.ts` applies `NIGHT_MAX_SLIPS` (default 5), reports each
+capped slip, and gives each processed slip its budget plus `NIGHT_GRACE_MS`
+(default 180000, clamped 5000–1800000). Timed-out slips get a block reason and
+the night continues sequentially. Review found that the first outer deadline
+only stopped waiting; completion adds AbortController propagation through
+worker, command, and PR paths. The deadline kills process groups and prevents
+later push/PR operations. Tests include real synthetic provider cancellation,
+cap planning, and continuing to the next slip after a deadline.
+
+### 3.3 — manual + live rehearsal
+
+`docs/gates-manual.md` explains typed commands because reaction events never
+reach agents. The short manual was posted in `overnight-crew` at
+11:07:08 UTC. All three gates then executed on the real stack:
+
+- `B-20261104-01`: approve command at 11:31:42 → PR #1 merged at 11:31:49,
+  with green CI and clean receipts; approval + merge ledger events recorded.
+- `B-20261105-02`: rollback command at 11:42:52 → PR #2 closed and remote
+  `shift/B-20261105-02` deleted; reason and rollback events recorded.
+- `B-20261105-03`: hold command at 11:42:53 → PR #3 remained open draft,
+  branch retained, hold event recorded.
+
+Evidence: `docs/phase-3-live-test.md`, `docs/phase-3-room-transcript.json`,
+`docs/phase-3-github-state.json`, and `supervisor/ledger.jsonl`. This follows
+the existing transcript policy; no screenshot claims.
+
+**Assisted-preparation limit:** the lead connector was offline. A manual
+`opencode run` reached the free-model usage cap, and the authenticated Z.ai
+coding-plan fallback reported insufficient balance. Codex therefore wrote
+the two taskslips and implemented BACKLOG-2/3 on separate branches. Each
+regression failed first (8 passed, 1 failed), then passed after the scoped
+fix (9/9). Drafts used the production receipt renderer with actual runner
+output, measured time, and explicit manual-assistance disclosure. The room
+was told before gate commands (post `p83brdk3zirhxmp6sfna6oschh`). These are
+live gate outcomes; this rehearsal does not claim a fresh autonomous worker
+night. Budget/continuation behavior is independently tested offline.
+
+### Connection lessons and fixes
+
+1. **One connection id per process.** `/tmp/opencode/post-manual.mjs`
+   reused the live supervisor's `SWITCH_CONNECTION_ID`. Switch evicted the
+   supervisor (`evicted: unknown`), followed by refusal and a silent exit.
+   Scratch posters must override the connection id with a fresh UUID.
+2. A separate clean-start failure happened at about +40 seconds. Frame
+   diagnostics showed non-empty four-byte RFC pings; replacing their bytes
+   with JSON caused `keepalive ping timeout`. Non-empty pings now echo
+   exactly; empty pings retain the cursor-pong contract. JSON heartbeat
+   messages still receive text pongs. Binary-payload regression added.
+3. The reconnect timer was unref'd. After disconnect, the event loop drained
+   before reconnect, so Node exited without a fatal error. The reconnect
+   timer now retains the process; a separate-process test proves survival
+   and reconnection with no other live application handles. Entry-point
+   diagnostics report exits, uncaught exceptions, and unhandled rejections.
+4. Bare goals arrived non-addressed in this room. Explicitly addressed
+   `@shift-supervisor tonight: …` goals now parse, with a grammar regression.
+   Replayed non-addressed goals remain ignored rather than re-executed.
+5. Mattermost's name-lookup channel route returned 403 for the human user;
+   discovery via `/users/{id}/teams/{id}/channels` worked. Evidence export
+   reads raw posts and omits session credentials.
+
+### 3.4 — verification and tag
+
+`verify.sh` runs `scripts/p3-checks.mjs` plus the expanded supervisor suite.
+The suite passes 93/93, including gate CI/FAIL/receipt refusals, budget
+continuation/cancellation, isolated merged rollback, binary keepalive echo,
+and reconnect process survival. `ARCHITECTURE.md` describes the new modules.
+Final verification is run after the completion commit because verify enforces
+clean workspace/target worktrees; `phase/3` is cut only after exit 0.
