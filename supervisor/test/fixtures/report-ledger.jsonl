@@ -1,0 +1,9 @@
+{"ts":"2026-11-05T01:00:00Z","taskId":"A","worker":"nightshift-worker-1","branch":"shift/A","prUrl":"https://example.test/pull/11","prNumber":11,"testPass":true,"blocked":false,"spentMin":5,"budgetMin":10}
+{"ts":"2026-11-05T01:10:00Z","taskId":"B","worker":"nightshift-worker-1","branch":"shift/B","prUrl":"https://example.test/pull/12","prNumber":12,"testPass":true,"blocked":false,"spentMin":8,"budgetMin":10}
+{"ts":"2026-11-05T01:20:00Z","taskId":"C","worker":"nightshift-worker-2","branch":"shift/C","prUrl":null,"prNumber":null,"testPass":false,"blocked":true,"reason":"budget exceeded","spentMin":10,"budgetMin":10}
+{"ts":"2026-11-05T01:30:00Z","taskId":"D","worker":"nightshift-worker-2","branch":"shift/D","prUrl":"https://example.test/pull/14","prNumber":14,"testPass":true,"blocked":false,"spentMin":7,"budgetMin":10}
+{"ts":"2026-11-05T02:00:00Z","actor":"shift-supervisor","type":"merge","refs":{"task":"A","pr":11}}
+{"ts":"2026-11-05T02:10:00Z","actor":"shift-supervisor","type":"gate_result","refs":{"task":"B","status":"rolled_back","reason":"scope drift"}}
+{"ts":"2026-11-05T02:20:00Z","actor":"shift-supervisor","type":"block","refs":{"task":"C","why":"budget 10 min exceeded"}}
+{"ts":"2026-11-05T02:30:00Z","actor":"shift-supervisor","type":"needs_eyes","refs":{"task":"D","why":["missing field: risk-call"]}}
+{"ts":"2026-11-05T02:31:00Z","actor":"shift-supervisor","type":"gate_result","refs":{"task":"D","status":"held"}}

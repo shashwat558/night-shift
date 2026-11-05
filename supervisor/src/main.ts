@@ -23,7 +23,6 @@
 // can clean up without a SIGKILL.
 
 import { readFileSync } from "node:fs";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnvFile, loadConfig, SUPERVISOR_DIR, REPO_ROOT, type Config } from "./env.js";
 import { SwitchClient } from "./switchclient.js";
@@ -54,10 +53,13 @@ import {
 import type { Slip } from "./slips.js";
 import { scanCollisions, parseClaim, decideClaims, collisionPrompt, type Collision, type Claim } from "./negotiation.js";
 import { exec } from "./exec.js";
+import { appendLedgerLine, ledgerPath, type LedgerLine } from "./ledger.js";
+import { publishShiftReport } from "./report.js";
+import { startDailyClock } from "./clock.js";
 
 // ---- ledger ------------------------------------------------------------------
 
-export interface LedgerEntry {
+export interface LedgerEntry extends LedgerLine {
   ts: string;
   taskId: string;
   branch: string;
@@ -70,15 +72,12 @@ export interface LedgerEntry {
   filesChanged: number;
   budgetMin: number;
   spentMin: number;
-}
-
-function ledgerPath(): string {
-  return process.env.LEDGER_PATH ?? join(SUPERVISOR_DIR, "ledger.jsonl");
+  worker?: string;
 }
 
 export function appendLedger(entry: LedgerEntry): void {
   try {
-    appendFileSync(ledgerPath(), JSON.stringify(entry) + "\n", { mode: 0o600 });
+    appendLedgerLine(entry);
   } catch {
     // best-effort: a crash here must not kill the loop
   }
@@ -215,6 +214,7 @@ async function processSlip(ctx: NightContext, slip: Slip, log: (...a: unknown[])
     filesChanged: wip.filesTouched.length,
     budgetMin: slip.time_budget_minutes,
     spentMin,
+    worker: slip.assignee,
   };
   appendLedger(entry);
 
@@ -388,6 +388,24 @@ export async function main(): Promise<void> {
   });
   ctx.client = client;
 
+  let reportBusy = false;
+  const reportNow = async (trigger: "clock" | "room"): Promise<void> => {
+    if (reportBusy) return;
+    reportBusy = true;
+    try {
+      const artifact = await publishShiftReport(cfg.repoRoot, trigger, content => client.postMessage(roomId, content));
+      log(`shift report ${artifact.reused ? "reused" : "posted"}: ${artifact.relativeFile} (${artifact.eventCount} event(s))`);
+      if (artifact.reused && trigger === "room") {
+        await client.postMessage(roomId, `Shift report already posted: \`${artifact.relativeFile}\`.`);
+      }
+    } catch (err) {
+      log(`report error: ${String(err)}`);
+      appendGateEvent("error", { report: trigger, why: String(err).slice(0, 200) });
+    } finally {
+      reportBusy = false;
+    }
+  };
+
   let negotiation: { collision: Collision; round: 1 | 2; claims: Map<string, { sender: string; claim: Claim }> } | null = null;
   const beginNegotiation = async (a: string, b: string): Promise<void> => {
     if (negotiation) { await client.postMessage(roomId, "A collision negotiation is already open."); return; }
@@ -432,6 +450,11 @@ export async function main(): Promise<void> {
   const listener = new Listener({
     onAddressed: (msg) => {
       if (!msg.isHuman) { void receiveClaim(msg); return; }        // humans post goals + gate commands
+
+      if (/^(?:@shift-supervisor\s+)?shift report please$/i.test(msg.body)) {
+        void reportNow("room");
+        return;
+      }
 
       const startCollision = /^(?:@shift-supervisor\s+)?negotiate\s+(\S+)\s+(\S+)$/i.exec(msg.body);
       if (startCollision) {
@@ -478,11 +501,24 @@ export async function main(): Promise<void> {
   });
 
   // ---- signal handlers -------------------------------------------------------
+  const reportHourRaw = Number(rawEnv.REPORT_HOUR ?? "9");
+  const reportHour = Number.isInteger(reportHourRaw) && reportHourRaw >= 0 && reportHourRaw <= 23 ? reportHourRaw : 9;
+  const firstDelayRaw = Number(rawEnv.REPORT_FIRST_RUN_MS ?? "");
+  const reportClock = startDailyClock(
+    () => reportNow("clock"),
+    {
+      hour: reportHour,
+      ...(Number.isFinite(firstDelayRaw) && firstDelayRaw > 0 ? { firstDelayMs: firstDelayRaw } : {}),
+    },
+  );
+  log(`next shift report: ${reportClock.nextRun.toISOString()} (local hour ${reportHour})`);
+
   let stopping = false;
   const stop = (sig: string): void => {
     if (stopping) return;
     stopping = true;
     log(`${sig} received — stopping`);
+    reportClock.stop();
     client.stop();
     // give in-flight work 2s to drain before hard exit
     setTimeout(() => process.exit(0), 2000).unref?.();

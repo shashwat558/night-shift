@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 4.)*
+phase actually builds them. *(Last updated: end of phase 5.)*
 
 ## Switch server (built phase 0)
 
@@ -166,6 +166,28 @@ actor. The room is the human view; the ledger is what we replay in tests
 and demos. Delete it and there is no report, no trust stats, and no
 reproducible evidence.
 
+`src/ledger.ts` is the one write/read boundary: it appends JSONL without
+rewriting existing bytes, tolerates and counts malformed historical lines,
+normalizes task IDs from both task records and event refs, and opens a new
+report window after each `report_posted`. New task records include the slip's
+worker identity; older records remain honestly grouped as `unassigned`.
+
+## 9 AM report (built phase 5)
+
+`src/report.ts` deterministically folds the current ledger window into
+Markdown: linked merges, rollback reasons, blocks, receipt gaps, per-worker
+done/rollback/average-budget/trust figures, and one recommendation. Its trust
+formula is deliberately visible in every report. Publishing is idempotent:
+if today's report is already the last event and nothing followed it, later
+room or CLI triggers reuse the artifact without another post or ledger line.
+
+`src/clock.ts` schedules local 09:00 and recalculates after each run so clock
+changes do not accumulate drift. `src/cli.ts` exposes `supervisor report`;
+the live listener accepts the addressed room phrase `shift report please`.
+All three paths call the same publisher, and only a successful room post
+appends `report_posted`. Delete these modules and the ledger remains useful
+machine data but the morning handoff disappears.
+
 ## scripts/verify.sh (built phase 0, grows every phase)
 
 The always-green contract: every check prints labeled PASS/FAIL, offline
@@ -179,10 +201,13 @@ Since phase 2 it also runs `scripts/p2-checks.mjs` (offline): the slips
 parser rejects bad files and round-trips good ones, the receipt renderer
 emits the §4.2 field order, `renderPrBody` puts the receipts block last,
 `parseProviderReceipt` round-trips, `appendLedger` writes valid JSONL, and
-the supervisor unit suite (now 96 tests including gates, night, and
-negotiation) passes.
+the supervisor unit suite (now 101 tests including gates, night,
+negotiation, reports, and the clock) passes.
 Phase 3 adds `scripts/p3-checks.mjs` for gate refusals, exact receipt gaps,
 cap planning, deadline continuation, and registry replay.
+Phase 4 adds collision scanning and negotiated-order checks. Phase 5 adds
+`scripts/p5-checks.mjs`: exact golden report replay, append/idempotency and
+accelerated-clock tests, then a clean scratch-clone build and replay.
 Delete it and nobody can ever again prove the phases keep working.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)

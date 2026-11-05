@@ -538,3 +538,38 @@ with a later error event; only the later `validated: true` event marks the
 confirmed body. Gate code now refuses the second negotiated merge until the
 first has merged, a validated post-rebase receipt exists, and the branch is
 based on current main. Its refusal path has an offline test.
+
+## Phase 5 — deterministic 9 AM report (2026-11-06)
+
+The ledger now has a formal shared boundary in `supervisor/src/ledger.ts`.
+Every writer appends one JSON object per line and never rewrites history;
+readers count malformed lines, accept both legacy task records and typed
+events, and select the window after the last `report_posted`. New task records
+persist their assigned worker so future trust rows are attributable without
+consulting mutable room history.
+
+`report.ts` folds that window into a stable Markdown report containing linked
+merges, rollback reasons, blocks, needs-eyes gaps, per-worker completion,
+rollback, average budget and trust statistics, plus one recommendation. The
+formula is printed in the report. `clock.ts` runs it at local 09:00 and
+recomputes the next date after every run. The same publisher backs the
+`supervisor report` CLI and addressed `shift report please` room command.
+Repeated same-day triggers with no intervening events reuse the existing
+artifact and do not post or append twice.
+
+The live room rehearsal ran against all four services. Post
+`rxuq39ndzbyyiyacqyczufa3xe` requested the report; supervisor post
+`bacafydjcinn7d3t369owmkfuo` returned 3 merged links, 1 rollback reason,
+0 blocked, 0 needs-eyes, a 70/100 aggregate historical trust row, and the
+rollback recommendation. The ledger recorded 20 consumed events and the
+room trigger. An immediate CLI call reused the artifact. Because phases 2–4
+did not store worker names in task records, those five live attempts are
+reported as `unassigned`; inventing attribution would break deterministic
+ledger-only replay. The new field fixes this prospectively.
+
+The Phase 5 tests add an exact golden fixture, byte-preserving append and
+report-window checks, publisher idempotency, local 09:00 calculation, and a
+25 ms accelerated first run. `scripts/p5-checks.mjs` then builds a scratch
+clone and proves its replay matches the same golden file. The complete
+supervisor suite is 101/101. Live evidence is in
+`docs/phase-5-live-test.md` and `docs/phase-5-room-transcript.json`.

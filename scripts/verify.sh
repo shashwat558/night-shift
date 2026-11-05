@@ -111,6 +111,13 @@ else
     fail "phase-4 checks failed (see node scripts/p4-checks.mjs)"
 fi
 
+# phase-5 additions: deterministic report replay + append-only and clock checks
+if node scripts/p5-checks.mjs; then
+    pass "phase-5 report replay, append-only ledger, triggers, and scratch clone"
+else
+    fail "phase-5 checks failed (see node scripts/p5-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

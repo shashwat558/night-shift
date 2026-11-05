@@ -17,13 +17,14 @@
 // The typed command is the machine truth (docs delta: reaction events do not
 // reach agents — one of the three recorded P0 docs deltas).
 
-import { appendFileSync, readFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exec } from "./exec.js";
 import type { CiState } from "./prs.js";
 import type { Config } from "./env.js";
 import { SUPERVISOR_DIR } from "./env.js";
+import { appendEvent, ledgerPath, type LedgerLine } from "./ledger.js";
 
 // ---- 1. gate command grammar (§4.4) ------------------------------------------
 
@@ -478,22 +479,9 @@ export interface OpenTask {
   prUrl: string | null;
 }
 
-type LedgerLine = Record<string, unknown> & { refs?: Record<string, unknown> };
-
-function ledgerPath(): string {
-  return process.env.LEDGER_PATH ?? join(SUPERVISOR_DIR, "ledger.jsonl");
-}
-
 export function appendGateEvent(type: string, refs: Record<string, unknown>, note?: string): void {
   try {
-    const entry = {
-      ts: new Date().toISOString(),
-      actor: "shift-supervisor",
-      type,
-      refs,
-      ...(note ? { note } : {}),
-    };
-    appendFileSync(ledgerPath(), JSON.stringify(entry) + "\n", { mode: 0o600 });
+    appendEvent(type, refs, note);
   } catch {
     // best-effort: ledger failure must not break the gate reply
   }
