@@ -265,10 +265,16 @@ export class WsClient {
         return;
       }
       case OP_PING: {
-        // answer immediately, inline, before any text dispatch of this chunk
-        const pong = this.opts.pongPayload
-          ? this.opts.pongPayload()
-          : (frame.payload.length > 125 ? frame.payload.subarray(0, 125) : frame.payload);
+        // answer immediately, inline, before any text dispatch of this chunk.
+        // If pongPayload is provided and non-empty, use it; otherwise echo payload (RFC 6455).
+        let pong = frame.payload.length > 125 ? frame.payload.subarray(0, 125) : frame.payload;
+        if (this.opts.pongPayload) {
+          const custom = this.opts.pongPayload();
+          const buf = typeof custom === "string" ? Buffer.from(custom, "utf8") : custom;
+          if (buf.length > 0) {
+            pong = buf.length > 125 ? buf.subarray(0, 125) : buf;
+          }
+        }
         this.sendPong(pong);
         this.handlers.ping?.(frame.payload);
         return;

@@ -167,8 +167,10 @@ export class SwitchClient {
         error: (err) => this.handlers.onConnection?.(false, `socket error: ${err.message}`),
         refused: (status, body) => this.onRefused(status, body),
       },
-      // the inline pong carries the cursor atomically, before dispatch
-      { pongPayload: () => JSON.stringify({ type: "pong", cursor: this.cursor }) },
+      // If server sends an RFC ping (opcode 9) with an empty payload, answer with JSON pong
+      {
+        pongPayload: () => JSON.stringify({ type: "pong", cursor: this.cursor }),
+      },
     );
     this.ws = ws;
     ws.connect();
