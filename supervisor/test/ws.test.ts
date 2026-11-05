@@ -204,14 +204,19 @@ test("messages larger than 64 KiB travel through the 127-length path", async (t)
   const port = await srv.listen();
 
   const got: string[] = [];
+  let opened = false;
   const client = new WsClient(`ws://127.0.0.1:${port}/x`, { authorization: "Bearer k" }, {
+    open: () => { opened = true; },
     text: (s) => got.push(s),
   });
   client.connect();
   const conn = await firstConn(srv);
+  await until(() => opened);
 
   const big = "x".repeat(70000);
-  assert.equal(client.sendText(big), true);
+  // socket.write may return false for backpressure while still queuing all
+  // bytes. Assert delivery below rather than depending on the kernel buffer.
+  client.sendText(big);
   await until(() => (conn.clientFrames[0]?.payload?.length ?? 0) === 70000);
   assert.equal((conn.clientFrames[0] as { payload: string }).payload, big);
   assert.equal((conn.clientFrames[0] as { masked: boolean }).masked, true);

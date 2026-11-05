@@ -616,7 +616,10 @@ test("receipt header must match the entire task id and test-log fence must close
   const body = prBodyFor(slip);
   assert.equal(validateReceiptBlock(body.replace(`receipts — ${slip.id}`, `receipts — ${slip.id}0`), receiptContract(slip)).ok, false);
   const lines = body.split("\n");
-  const close = lines.findLastIndex((line) => line.trim() === "```");
+  let close = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]?.trim() === "```") close = i;
+  }
   lines.splice(close, 1);
   assert.ok(validateReceiptBlock(lines.join("\n"), receiptContract(slip)).gaps.includes("test-log fenced block is not closed"));
 });

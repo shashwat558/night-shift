@@ -487,3 +487,9 @@ continuation/cancellation, isolated merged rollback, binary keepalive echo,
 and reconnect process survival. `ARCHITECTURE.md` describes the new modules.
 Final verification is run after the completion commit because verify enforces
 clean workspace/target worktrees; `phase/3` is cut only after exit 0.
+
+Final verification also caught two test compatibility issues before tagging:
+use an ES2022-compatible loop instead of `findLastIndex`; and judge a large
+WebSocket send by actual received bytes, since `socket.write(false)` signals
+backpressure while the frame is still queued. The receipt/transport regression
+checks were rerun after both corrections.
