@@ -29,3 +29,18 @@ is a fast, repeatable execution of the same branch, receipt, gate, collision,
 retest, and report machinery without spending provider credits or mutating the
 production target checkout and ledger. The Phase 3–5 evidence documents remain
 the proof of real GitHub PRs, human gates, ordered landing, and the live report.
+
+## Fresh-clone smoke
+
+A separate clone at `/tmp/nightshift-p6-smoke-ibWqqc/repo` ran the committed
+README path. Bootstrap cloned `nightshift-target`, installed both locked
+dependency trees, built the supervisor, and generated a new chmod-600
+`ops/.env`. The offline night completed in 5.8 seconds. The full verifier then
+passed from that clean clone, including the scratch-clone golden replay and
+Phase 6 lint.
+
+To avoid starting a second stack on the same host ports, the verifier step
+used the credentials for the already-running local stack; no credentials were
+committed or printed. The Compose `up -d --wait` command was separately rerun
+against the live project and reported Switch, Gateway, Mattermost, Postgres,
+setup, and init-db ready/healthy/completed as appropriate.

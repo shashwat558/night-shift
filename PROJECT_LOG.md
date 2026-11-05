@@ -607,3 +607,13 @@ maps a 3–4 minute recording to the four judging dimensions and names the
 primary Best Business Workflow track, optional side-track rule, required
 repo/video/README artifacts, secret checks, and the November 7 23:59 IST
 deadline. `scripts/p6-checks.mjs` lints those promises and the demo schema.
+
+Fresh-clone smoke used commit `3c87aad` in an isolated directory. Bootstrap
+cloned the target, installed dependencies, built cleanly, and created a new
+secret environment; the offline demo finished in 5.8 seconds. To avoid a
+second Compose project colliding on the same four host ports, the final
+verifier in that clone was pointed at the already-running stack using its
+local ignored credentials. It passed every phase, both clean-worktree checks,
+and the final `ALL ... verify passed (offline)` line. The documented Compose
+`up -d --wait` command was also rerun directly and all service conditions
+completed successfully.
