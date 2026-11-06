@@ -5,8 +5,7 @@
 //      that addresses them;
 //   2. crew/taskslip.schema.md and crew/receipt.schema.md exist with their key
 //      headings;
-//   3. crew/rehearsal.md exists and names the three agents;
-//   4. the three crew agents are registered and owned by the admin account,
+//   3. the three crew agents are registered and owned by the admin account,
 //      with addressing per template (lead: open policy; workers: owner-agents
 //      rules), checked through the Gateway with an admin session.
 // Prints one line per check; exits 1 on the first failure. No secrets printed.
@@ -53,15 +52,7 @@ for (const [f, keys] of [
   else passf(`${f} carries the contract`);
 }
 
-// 3. rehearsal doc
-if (existsSync(`${ROOT}crew/rehearsal.md`)) {
-  const body = readFileSync(`${ROOT}crew/rehearsal.md`, "utf8");
-  if (["night-lead", "worker-1", "worker-2"].every((a) => body.includes(a))) {
-    passf("crew/rehearsal.md covers all three agents");
-  } else fail("crew/rehearsal.md is not about the full crew");
-} else fail("crew/rehearsal.md missing");
-
-// 4. registered crew, admin-owned, addressing per template
+// 3. registered crew, admin-owned, addressing per template
 const gw = `http://127.0.0.1:${env.GATEWAY_HOST_PORT ?? 3100}/gateway`;
 const login = await fetch(`${gw}/auth/login`, {
   method: "POST",

@@ -54,9 +54,8 @@ logs rooms server-side.
 - `taskslip.schema.md` / `receipt.schema.md` — the wire formats for work
   orders and receipts. Delete these and nothing downstream can trust
   anything a worker claims.
-- `rehearsal.md` — the phase-1 exit checklist, plus the transcript in
-  `docs/rehearsal-transcript.md`; run it on any fresh install before any
-  phase beyond 1.
+- `docs/rehearsal-transcript.md` — credential-free room evidence from the
+  original crew bring-up.
 
 ## night-lead: {team}-night-lead (agent, built phase 1)
 

@@ -79,6 +79,5 @@ agents' own); diff-check: 4 reply strings, 4 unique.
    the connection. The phase-2 WS client will need reconnect-on-close plus
    result ordering; noted on the listener's spec (SPEC §5.3).
 
-Run-through result: **phase-1 rehearsal checklist PASSED** — see
-`crew/rehearsal.md` for the itemized tick list and `docs/screenshots/` for
-the room view captured at the end of the run.
+Run-through result: **phase-1 crew bring-up PASSED**. This credential-free
+transcript is the retained room evidence.

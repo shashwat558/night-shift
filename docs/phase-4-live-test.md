@@ -1,8 +1,7 @@
 # Phase 4 live collision rehearsal — 2026-11-05/06
 
 Status: both curated PRs landed in the agreed order on the live Switch stack.
-Times below are UTC. The room transcript uses the repository's transcript
-policy in `docs/screenshots/README.md`.
+Times below are UTC. The credential-free room transcript is the evidence.
 
 - [Raw room transcript](phase-4-room-transcript.json): original post IDs,
   timestamps, sender IDs, and messages, without session credentials.

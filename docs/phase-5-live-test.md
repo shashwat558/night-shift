@@ -1,8 +1,8 @@
 # Phase 5 live report rehearsal — 2026-11-06
 
 Status: the Phase 5 build produced and posted the correct ledger-only shift
-report on the live Switch stack. Times below are UTC. Evidence follows the
-transcript policy in `docs/screenshots/README.md`.
+report on the live Switch stack. Times below are UTC. The credential-free
+room transcript is the evidence.
 
 - [Raw room transcript](phase-5-room-transcript.json): the human trigger and
   supervisor report, with original post IDs, timestamps, and sender IDs.

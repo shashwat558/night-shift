@@ -205,7 +205,6 @@ during the hackathon, we switch and record it.
   - `kickoff:` greeting script that makes night-lead and both workers greet
     distinctly (name + one-line job each).
 - `taskslip.schema.md` and `receipt.schema.md` — as §4.1/§4.2 with examples.
-- `rehearsal.md` — the P1 checklist w/ expected behavior each item.
 
 ### 5.3 supervisor/ (our protocol agent — Node 20+, TypeScript, minimal deps)
 
@@ -255,13 +254,12 @@ supervisor/
 ### 5.4 scripts/verify.sh
 
 Bash. Labeled PASS/FAIL each line, `--offline` default, `--live` add-on,
-exit 1 on first FAIL. Checks grow per phase (exact mapping in
-docs/PHASE-PLAN.md):
+exit 1 on first FAIL. Checks grow with the product (exact mapping below):
 
 | Phase | offline additions |
 | --- | --- |
 | 0 | node ≥20, git identity set, `gh auth status` ok (existence only), docker healthy, switch core health endpoint reachable if stack up, mattermost reachable, room list API read, provider key existence check (never prints values), target tests green |
-| 1 | crew/ schema files exist + parse; template YAML valid per TEMPLATES.md keys; rehearsal checklist present |
+| 1 | crew schema files exist + parse; template YAML valid per TEMPLATES.md keys; registered crew and addressing rules verified |
 | 2 | synthetic goal → slips parser produces ≥1 valid slip; fake worker receipt → PR body render contains summary/tests/risk sections |
 | 3 | gate logic table (approve-without-CI rejected; rollback path; missing-receipt→needs-eyes) as unit tests; budget logic state machine |
 | 4 | overlap scanner: fixture branch diffs → detected shared file; negotiation orderer: claims consistent→executes, contradictory→escalate |
@@ -315,7 +313,7 @@ particular lines SKIP-marked, but P0's green baseline requires the stack).
 | 4 | Worker spawner quality/timeouts | medium | Budget timeouts at supervisor level (kill → mark blocked w/ reason, continue); receipts validated on claw-back; retries only human-approved. |
 | 5 | Race: night-lead writes slips file late | low | Watcher with generous timeout + `@night-lead` re-nudge once at 60s; then block with reason (never fake slips). |
 | 6 | GitHub PR CI flaky/slow on free tier | low | Gate reads `gh pr checks --watch`-with-timeout; approve honored only on green; else reply with pending state. |
-| 7 | Two-phase typing: template address rules vs. announced party names | low | rehearsal.md asserts each addressing case live (night-lead answers anyone; workers silent unless owner-agents). |
+| 7 | Two-phase typing: template address rules vs. announced party names | low | Live room transcript confirms each addressing case (night-lead answers anyone; workers stay silent unless owner-agents). |
 | 8 | Nest git repo (target/) inside monorepo | low | `.gitignore` `target/` in outer repo; SUP stands on `git -C target`; documented in both READMEs. |
 
 ## 9. Decisions (answered by the human 2026-11-02)

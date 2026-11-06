@@ -2,7 +2,7 @@
 
 Status: the complete scripted judge night ran through the live Switch room in
 5.8 seconds, below the ten-minute budget. Every room message is explicitly
-prefixed `[scripted demo]`. Evidence follows `docs/screenshots/README.md`.
+prefixed `[scripted demo]`; the credential-free room export is the evidence.
 
 - [Raw room transcript](phase-6-room-transcript.json): ten credential-free
   Mattermost posts with original IDs, timestamps, sender ID, and content.

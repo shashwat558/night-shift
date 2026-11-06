@@ -52,8 +52,7 @@ supervisor read real GitHub PR #3 and returned commit `77a2eef54f5c`, evidence
 `test/pets.test.js`, green CI, policy pass, and reviewer clear. Inspection did
 not ready, merge, close, or otherwise mutate the draft PR.
 
-## Evidence policy
+## Evidence
 
-No screenshot is claimed. Per [`screenshots/README.md`](screenshots/README.md),
-the machine-readable room export is the authoritative evidence because the
-agent browser cannot reuse Mattermost's HttpOnly human session.
+The machine-readable room export is authoritative and contains original post
+IDs, exact reviewed commits, evidence fingerprints, and no session secrets.

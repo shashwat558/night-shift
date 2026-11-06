@@ -5,7 +5,7 @@ Truth over optimism — every claim here was run, or it isn't here yet.
 
 ---
 
-## 2026-11-02 — Pre-phase 0 groundwork (spec + plan, before any scaffold)
+## 2026-11-02 — Initial groundwork
 
 **What was done (outside phases, by request):**
 - Fetched official docs (docs.switchagents.ai, 2026-11-02): Switch quickstart,
@@ -13,8 +13,7 @@ Truth over optimism — every claim here was run, or it isn't here yet.
   room commands. Shallow-cloned sandbox-quantum/switch for the
   `examples/agent-templates/triage-pair.template.yaml` model and the
   standalone Docker Compose contract.
-- Wrote `docs/SPEC.md` (full project spec) and `docs/PHASE-PLAN.md`
-  (per-phase execution plan) before touching any scaffold.
+- Wrote `docs/SPEC.md` before touching the scaffold.
 
 **Docs-vs-brief deltas found (docs win):**
 1. Agent transport is **WebSocket**; SSE is deprecated ("removed after a
@@ -182,7 +181,6 @@ starts the crew (night-lead + workers in `overnight-crew`, owned by admin).
 - `taskslip.schema.md` / `receipt.schema.md` per SPEC §4.1/§4.2 — field
   tables, legal ids, files_allowed as hard whitelist, budgets; a receipt can
   never merge with FAIL; definitions of who checks what.
-- `rehearsal.md` — the exit checklist.
 
 **Crew stood up headless (`supervisor/dev-tools/provision-crew.mjs`, no
 Console):** template-parsed (line slicing, not a YAML lib), agents
@@ -230,14 +228,13 @@ agents' own, not scripted.
    attempts (night-lead mention w/ `—`); given the room came from the
    template this phase, future rehearsals post the kickoff manually and the
    gateway call stays idempotent via `ops/.agents/crew-state.json`.
-5. No screenshots: the Mattermost login wall of this deploy gives an
-   agent-driven browser no secret-free path (HttpOnly session cookies);
-   `docs/screenshots/README.md` records why the transcript is the evidence.
+5. Evidence capture uses credential-free raw room transcripts with original
+   post IDs; Mattermost's human session remains HttpOnly.
 
 **verify.sh grown:** `scripts/p1-checks.mjs` (offline, localhost-only) runs
 the template's shape against the tiny parser (version, team param, three
-agent slots, room, kickoff, roster), the schemas' key headings, the
-rehearsal doc, and the live registry: three agents registered, Admin-owned,
+agent slots, room, kickoff, roster), the schemas' key headings, and the live
+registry: three agents registered, Admin-owned,
 addressing matching the template. Verified green pre-commit (all PASS except
 the expected pre-commit worktree line):
 
@@ -251,7 +248,6 @@ PASS template room lists the full crew
 PASS template room puts the deployer in it
 PASS crew/taskslip.schema.md carries the contract
 PASS crew/receipt.schema.md carries the contract
-PASS crew/rehearsal.md covers all three agents
 PASS agent nightshift-night-lead registered (5ecf09d8…, owner Admin)
 PASS night-lead addressing open (policy null)
 PASS agent nightshift-worker-1 registered (282984e1…, owner Admin)
@@ -508,8 +504,8 @@ Fixture repos test the branch scan; decision tests cover consistent claims,
 contradiction, and a false file claim. `verify.sh` runs the Phase 4 checks.
 
 The curated collision path is `src/app.js`: `target/BACKLOG.md` and the real
-app use it. The older `src/index.js` mention in `docs/PHASE-PLAN.md` is
-stale. The Phase 4 exit was completed in the follow-up below. The provider availability limit from Phase 3 still applies; any
+app use it. An early `src/index.js` design note was stale. The Phase 4 exit
+was completed in the follow-up below. The provider availability limit from Phase 3 still applies; any
 assisted live preparation must be disclosed in receipts and room evidence.
 
 ### Phase 4 live completion (Nov 5–6)

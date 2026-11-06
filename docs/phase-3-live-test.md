@@ -2,8 +2,7 @@
 
 Status: all three gate outcomes passed on the live Switch/Mattermost stack.
 Task preparation for BACKLOG-2 and BACKLOG-3 was assisted, as disclosed below.
-Times are UTC. Evidence follows the transcript policy in
-[screenshots/README.md](screenshots/README.md); no screenshots were fabricated.
+Times are UTC. Machine-readable room and GitHub exports are the evidence.
 
 ## Captured machine truth
 
