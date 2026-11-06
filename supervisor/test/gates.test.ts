@@ -19,6 +19,8 @@ import {
   validateReceiptBlock,
   decideGate,
   handleGateCommand,
+  inspectTask,
+  mergePr,
   rebuildOpenTasks,
   appendGateEvent,
   needsEyesPost,
@@ -351,10 +353,14 @@ function writeGhShim(opts: { viewJson: string; readyOk?: boolean; mergeOk?: bool
     "  exit 0",
     "fi",
     'if [ "$1" = "pr" ] && [ "$2" = "ready" ]; then',
+    '  echo "$*" >> "$NSP_GH_CALLS"',
     `  [ "$NSP_GH_READY_OK" = "1" ] || { echo "ready denied" >&2; exit 1; }`,
     "  exit 0",
     "fi",
     'if [ "$1" = "pr" ] && [ "$2" = "merge" ]; then',
+    '  echo "$*" >> "$NSP_GH_CALLS"',
+    '  case "$*" in *"--match-head-commit abcdef1234567890"*) ;; *) echo "missing head binding" >&2; exit 1;; esac',
+    '  [ "$NSP_GH_MERGE_OK" = "1" ] || { echo "head commit changed" >&2; exit 1; }',
     '  echo "Merged pull request #7"',
     "  exit 0",
     "fi",
@@ -377,13 +383,15 @@ function writeGhShim(opts: { viewJson: string; readyOk?: boolean; mergeOk?: bool
   chmodSync(join(shimDir, "git"), 0o750);
 }
 
-function shimEnv(opts: { viewJson?: string; readyOk?: boolean; closeOk?: boolean }): NodeJS.ProcessEnv {
+function shimEnv(opts: { viewJson?: string; readyOk?: boolean; mergeOk?: boolean; closeOk?: boolean }): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: `${shimDir}:${process.env.PATH ?? ""}`,
     NSP_GH_VIEW_JSON: opts.viewJson ?? "",
     NSP_GH_READY_OK: opts.readyOk === false ? "0" : "1",
+    NSP_GH_MERGE_OK: opts.mergeOk === false ? "0" : "1",
     NSP_GH_CLOSE_OK: opts.closeOk === false ? "0" : "1",
+    NSP_GH_CALLS: join(base, "gh-calls.log"),
   };
 }
 
@@ -393,6 +401,8 @@ const GREEN_VIEW = JSON.stringify({
   body: prBodyFor(slipFixture()),
   statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
   mergeCommit: null,
+  headRefOid: "abcdef1234567890",
+  files: [{ path: "src/routes/pets.js" }],
 });
 
 const PENDING_VIEW = JSON.stringify({
@@ -401,6 +411,8 @@ const PENDING_VIEW = JSON.stringify({
   body: prBodyFor(slipFixture()),
   statusCheckRollup: [{ status: "IN_PROGRESS", conclusion: null }],
   mergeCommit: null,
+  headRefOid: "abcdef1234567890",
+  files: [{ path: "src/routes/pets.js" }],
 });
 
 interface Post {
@@ -446,7 +458,9 @@ test("handleGateCommand: approve → ready+merge, ✅ post, registry drop, gate_
     );
     assert.equal(decision.action, "merge");
     // Report the completed action once, after it succeeds.
-    assert.equal(posts.length, 1);
+    assert.equal(posts.length, 2, "decision card then completed action");
+    assert.match(posts[0]?.content ?? "", /Trust decision/);
+    assert.match(posts[0]?.content ?? "", /abcdef123456/);
     const merged = posts.map((p) => p.content).find((c) => c.includes("✅"));
     assert.ok(merged, `no merged post: ${JSON.stringify(posts)}`);
     assert.match(merged ?? "", /PR #7/);
@@ -464,9 +478,46 @@ test("handleGateCommand: approve → ready+merge, ✅ post, registry drop, gate_
     const mergeLine = lines.find((l) => l.type === "merge");
     assert.ok(mergeLine, "merge event missing");
     assert.equal((mergeLine.refs as Record<string, unknown>).pr, 7);
+    assert.equal((mergeLine.refs as Record<string, unknown>).head_sha, "abcdef1234567890");
+    assert.match(readFileSync(join(base, "gh-calls.log"), "utf8"), /--match-head-commit abcdef1234567890/);
   } finally {
     restoreLedger(guard);
   }
+});
+
+test("inspectTask posts a commit-bound decision card without changing the registry", async () => {
+  writeGhShim({ viewJson: GREEN_VIEW });
+  const posts: Post[] = [];
+  const registry = new Map([
+    ["B-20261105-01", { taskId: "B-20261105-01", branch: "shift/B-20261105-01", prNumber: 7, prUrl: null }],
+  ]);
+  const guard = withTestLedger();
+  try {
+    const evidence = await inspectTask(
+      { cfg: testConfig(), client: fakeClient(posts), roomId: "room-1", registry },
+      "B-20261105-01",
+      { envOverride: shimEnv({ viewJson: GREEN_VIEW }) },
+    );
+    assert.equal(evidence?.headSha, "abcdef1234567890");
+    assert.equal(posts.length, 1);
+    assert.match(posts[0]?.content ?? "", /Trust decision/);
+    assert.equal(registry.has("B-20261105-01"), true);
+    assert.match(readFileSync(tmpLedger, "utf8"), /policy_result/);
+    assert.match(readFileSync(tmpLedger, "utf8"), /review_result/);
+  } finally {
+    restoreLedger(guard);
+  }
+});
+
+test("mergePr restores draft when GitHub rejects a stale reviewed SHA", async () => {
+  writeGhShim({ viewJson: GREEN_VIEW, mergeOk: false });
+  const result = await mergePr(base, 7, "abcdef1234567890", shimEnv({ viewJson: GREEN_VIEW, mergeOk: false }));
+  assert.equal(result.ok, false);
+  assert.match(result.output, /head commit changed/);
+  assert.match(result.output, /draft state restored/);
+  const calls = readFileSync(join(base, "gh-calls.log"), "utf8");
+  assert.match(calls, /pr merge 7 --merge --match-head-commit abcdef1234567890/);
+  assert.match(calls, /pr ready 7 --undo/);
 });
 
 test("handleGateCommand: approve WITHOUT CI green ⇒ refusal post with the CI state, registry untouched", async () => {
@@ -526,6 +577,8 @@ test("handleGateCommand: missing receipt field ⇒ needs-eyes post naming the ex
     body: prBodyFor(slipFixture()).replace(/- summary: .*\n/, ""),
     statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
     mergeCommit: null,
+    headRefOid: "abcdef1234567890",
+    files: [{ path: "src/routes/pets.js" }],
   });
   writeGhShim({ viewJson: gappedView });
   const posts: Post[] = [];

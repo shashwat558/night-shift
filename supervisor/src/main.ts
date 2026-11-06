@@ -39,6 +39,7 @@ import {
 import {
   parseGateCommand,
   handleGateCommand,
+  inspectTask,
   rebuildOpenTasks,
   appendGateEvent,
   type GateCommand,
@@ -459,6 +460,11 @@ export async function main(): Promise<void> {
       const startCollision = /^(?:@shift-supervisor\s+)?negotiate\s+(\S+)\s+(\S+)$/i.exec(msg.body);
       if (startCollision) {
         void beginNegotiation(startCollision[1]!, startCollision[2]!).catch(err => log(`negotiation error: ${String(err)}`));
+        return;
+      }
+      const inspect = /^(?:@shift-supervisor\s+)?inspect\s+([A-Za-z0-9][A-Za-z0-9._-]*)$/i.exec(msg.body);
+      if (inspect) {
+        void inspectTask({ cfg, client, roomId, registry, by: msg.sender }, inspect[1] as string, { log });
         return;
       }
       // gate commands (§4.4) run even while a night is in flight

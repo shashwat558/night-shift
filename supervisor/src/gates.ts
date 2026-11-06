@@ -25,6 +25,9 @@ import type { CiState } from "./prs.js";
 import type { Config } from "./env.js";
 import { SUPERVISOR_DIR } from "./env.js";
 import { appendEvent, ledgerPath, type LedgerLine } from "./ledger.js";
+import { evaluatePolicy, loadPolicy } from "./policy.js";
+import { reviewCandidate } from "./reviewer.js";
+import { createEvidenceBundle, renderDecisionCard, type EvidenceBundle } from "./evidence.js";
 
 // ---- 1. gate command grammar (§4.4) ------------------------------------------
 
@@ -382,13 +385,15 @@ export interface PrStateRead {
   isDraft: boolean;
   ci: { state: CiState; detail: string };
   mergeCommit: string | null;
+  headSha: string | null;
+  files: string[];
 }
 
 /** One `gh pr view` gives body + state + CI rollup + merge sha. */
 export async function readPrState(cwd: string, prNumber: number, envOverride?: NodeJS.ProcessEnv): Promise<PrStateRead | null> {
   const view = await exec(
     "gh",
-    ["pr", "view", String(prNumber), "--json", "body,state,isDraft,statusCheckRollup,mergeCommit"],
+    ["pr", "view", String(prNumber), "--json", "body,state,isDraft,statusCheckRollup,mergeCommit,headRefOid,files"],
     cwd,
     60_000,
     { env: envOverride },
@@ -401,6 +406,8 @@ export async function readPrState(cwd: string, prNumber: number, envOverride?: N
       isDraft?: boolean;
       statusCheckRollup?: { status?: string; conclusion?: string }[];
       mergeCommit?: { oid?: string };
+      headRefOid?: string;
+      files?: { path?: string }[];
     };
     return {
       body: j.body ?? "",
@@ -408,6 +415,8 @@ export async function readPrState(cwd: string, prNumber: number, envOverride?: N
       isDraft: Boolean(j.isDraft),
       ci: rollup(j.statusCheckRollup ?? []),
       mergeCommit: j.mergeCommit?.oid ?? null,
+      headSha: j.headRefOid ?? null,
+      files: (j.files ?? []).map(file => file.path ?? "").filter(Boolean),
     };
   } catch {
     return null;
@@ -429,11 +438,15 @@ function rollup(checks: { status?: string; conclusion?: string }[]): { state: Ci
 
 /** Approve path: undraft the PR, then merge it (--merge, no squash per repo
  *  norm "shift branches land via GitHub merge"). */
-export async function mergePr(cwd: string, prNumber: number, envOverride?: NodeJS.ProcessEnv): Promise<{ ok: boolean; output: string }> {
+export async function mergePr(cwd: string, prNumber: number, headSha: string, envOverride?: NodeJS.ProcessEnv): Promise<{ ok: boolean; output: string }> {
   const ready = await exec("gh", ["pr", "ready", String(prNumber)], cwd, 60_000, { env: envOverride });
   if (!ready.ok) return { ok: false, output: `gh pr ready failed: ${ready.output.slice(-300)}` };
-  const merged = await exec("gh", ["pr", "merge", String(prNumber), "--merge"], cwd, 120_000, { env: envOverride });
-  if (!merged.ok) return { ok: false, output: `gh pr merge failed: ${merged.output.slice(-300)}` };
+  const merged = await exec("gh", ["pr", "merge", String(prNumber), "--merge", "--match-head-commit", headSha], cwd, 120_000, { env: envOverride });
+  if (!merged.ok) {
+    const restored = await exec("gh", ["pr", "ready", String(prNumber), "--undo"], cwd, 60_000, { env: envOverride });
+    const draftState = restored.ok ? "draft state restored" : `WARNING: draft restore failed: ${restored.output.slice(-160)}`;
+    return { ok: false, output: `gh pr merge failed: ${merged.output.slice(-300)}; ${draftState}` };
+  }
   return { ok: true, output: merged.output };
 }
 
@@ -539,6 +552,70 @@ export interface GateRuntime {
   registry: Map<string, OpenTask>;
   /** by: who commanded (human handle in the room id or plain label). */
   by?: string;
+  policyFile?: string;
+}
+
+export async function inspectTask(
+  rt: GateRuntime,
+  taskId: string,
+  opts: { envOverride?: NodeJS.ProcessEnv; log?: (...a: unknown[]) => void } = {},
+): Promise<EvidenceBundle | null> {
+  const task = rt.registry.get(taskId);
+  if (!task) {
+    await rt.client.postMessage(rt.roomId, unknownTaskPost(taskId));
+    return null;
+  }
+  const pr = await readPrState(rt.cfg.targetDir, task.prNumber, opts.envOverride);
+  if (!pr) {
+    await rt.client.postMessage(rt.roomId, `⛔ inspect **${taskId}** refused — the PR could not be read right now.`);
+    return null;
+  }
+  try {
+    const receipt = receiptForTask(taskId, pr.body ?? "");
+    const evidence = buildEvidence(rt, task, pr, receipt);
+    recordEvidence(evidence);
+    await rt.client.postMessage(rt.roomId, renderDecisionCard(evidence));
+    opts.log?.(`inspect ${taskId} → ${evidence.reviewer.verdict} (${evidence.fingerprint})`);
+    return evidence;
+  } catch (error) {
+    const reply = `⛔ inspect **${taskId}** failed — trust policy could not be evaluated: ${String(error).slice(0, 180)}`;
+    appendGateEvent("error", { task: taskId, inspect: true, why: String(error).slice(0, 180) });
+    await rt.client.postMessage(rt.roomId, reply);
+    return null;
+  }
+}
+
+function receiptForTask(taskId: string, body: string): ReceiptCheck {
+  return validateReceiptBlock(body, {
+    taskId,
+    filesAllowed: collectFilesAllowed(body),
+    budgetMinutes: inferBudgetMinutes(body),
+  });
+}
+
+function buildEvidence(rt: GateRuntime, task: OpenTask, pr: PrStateRead, receipt: ReceiptCheck): EvidenceBundle {
+  const policy = loadPolicy(rt.policyFile ?? join(rt.cfg.repoRoot, "crew", "nightshift.policy.yml"));
+  const policyResult = evaluatePolicy(policy, {
+    files: pr.files,
+    budgetMinutes: receipt.budgetCap ?? inferBudgetMinutes(pr.body ?? ""),
+    risk: receipt.riskLevel,
+  });
+  const reviewer = reviewCandidate({ headSha: pr.headSha, actualFiles: pr.files, receipt, policy, policyResult });
+  return createEvidenceBundle({
+    taskId: task.taskId,
+    prNumber: task.prNumber,
+    headSha: pr.headSha ?? "missing",
+    files: pr.files,
+    ci: pr.ci,
+    receipt,
+    policy: policyResult,
+    reviewer,
+  });
+}
+
+function recordEvidence(evidence: EvidenceBundle): void {
+  appendGateEvent("policy_result", { task: evidence.taskId, pr: evidence.prNumber, head_sha: evidence.headSha, status: evidence.policy.status, evidence: evidence.fingerprint });
+  appendGateEvent("review_result", { task: evidence.taskId, pr: evidence.prNumber, head_sha: evidence.headSha, verdict: evidence.reviewer.verdict, evidence: evidence.fingerprint });
 }
 
 /** Execute one parsed gate command: validate receipts → decide → gh action →
@@ -572,11 +649,27 @@ export async function handleGateCommand(
   }
 
   const pr = await readPrState(rt.cfg.targetDir, task.prNumber, opts.envOverride);
-  const receipt = validateReceiptBlock(pr?.body ?? "", {
-    taskId: gate.taskId,
-    filesAllowed: collectFilesAllowed(pr?.body ?? ""),
-    budgetMinutes: inferBudgetMinutes(pr?.body ?? ""),
-  });
+  const receipt = receiptForTask(gate.taskId, pr?.body ?? "");
+  let evidence: EvidenceBundle | null = null;
+  if (gate.verb === "approve" && pr) {
+    try {
+      evidence = buildEvidence(rt, task, pr, receipt);
+      recordEvidence(evidence);
+      await rt.client.postMessage(rt.roomId, renderDecisionCard(evidence));
+      if (evidence.policy.status === "block" || evidence.reviewer.verdict === "challenge") {
+        const blockers = [...evidence.policy.findings.filter(f => f.severity === "block").map(f => f.message), ...evidence.reviewer.findings];
+        const reply = `👀 needs-eyes — ${gate.taskId} is blocked by evidence \`${evidence.fingerprint}\` for commit \`${evidence.headSha.slice(0, 12)}\`:\n${blockers.slice(0, 6).map(finding => `- ${finding}`).join("\n")}\nResolve the findings and push a new commit.`;
+        appendGateEvent("needs_eyes", { task: gate.taskId, why: blockers, head_sha: pr.headSha, evidence: evidence.fingerprint });
+        await rt.client.postMessage(rt.roomId, reply);
+        return { action: "refuse_receipt", reply };
+      }
+    } catch (error) {
+      const reply = `⛔ approve **${gate.taskId}** refused — trust policy could not be evaluated: ${String(error).slice(0, 180)}`;
+      appendGateEvent("error", { task: gate.taskId, gate: "approve", why: String(error).slice(0, 180) });
+      await rt.client.postMessage(rt.roomId, reply);
+      return { action: "refuse_receipt", reply };
+    }
+  }
   // A negotiated second PR may only land after the first merge and a fresh
   // rebase/test receipt. The normal gate still checks its own CI at read time.
   if (gate.verb === "approve") {
@@ -599,11 +692,11 @@ export async function handleGateCommand(
 
   let extraPost: string | null = null;
   if (decision.action === "merge") {
-    const merged = await mergePr(rt.cfg.targetDir, task.prNumber, opts.envOverride);
+    const merged = await mergePr(rt.cfg.targetDir, task.prNumber, evidence?.headSha ?? "missing", opts.envOverride);
     if (merged.ok) {
       extraPost = mergedPost(gate.taskId, task.prNumber, task.prUrl);
-      appendGateEvent("gate_result", { task: gate.taskId, gate: "approved", by: rt.by ?? "human", ci: "green", status: "merged" });
-      appendGateEvent("merge", { task: gate.taskId, pr: task.prNumber });
+      appendGateEvent("gate_result", { task: gate.taskId, gate: "approved", by: rt.by ?? "human", ci: "green", status: "merged", head_sha: evidence?.headSha, evidence: evidence?.fingerprint });
+      appendGateEvent("merge", { task: gate.taskId, pr: task.prNumber, head_sha: evidence?.headSha, evidence: evidence?.fingerprint });
       rt.registry.delete(gate.taskId);
     } else {
       extraPost = `⛔ approve **${gate.taskId}** could not merge: ${merged.output.slice(0, 300)}\nThe PR stays draft; nothing has merged.`;

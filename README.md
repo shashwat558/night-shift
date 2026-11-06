@@ -10,6 +10,11 @@ goal in Mattermost; Switch carries every room event to the crew and supervisor;
 the supervisor opens draft work, refuses unsafe merges, and records an
 append-only ledger that can be replayed without trusting chat summaries.
 
+Its trust-control layer makes the morning handoff concrete: repository policy
+checks the actual PR diff, an independent reviewer challenges receipt claims,
+and Switch posts a decision card bound to the PR's exact commit. A later push
+changes the evidence fingerprint and expires the earlier decision.
+
 ## Architecture
 
 ```mermaid
@@ -87,8 +92,32 @@ human reaction events to agents:
 @shift-supervisor approve <task-id>
 @shift-supervisor rollback <task-id> <reason>
 @shift-supervisor hold <task-id>
+@shift-supervisor inspect <task-id>
 @shift-supervisor shift report please
 ```
+
+## Repository trust policy
+
+Teams own the rules in [`crew/nightshift.policy.yml`](crew/nightshift.policy.yml):
+
+```yaml
+max_changed_files: 8
+max_budget_minutes: 30
+reviewer_required: true
+blocked_paths:
+  - migrations/**
+  - .github/workflows/**
+review_paths:
+  - src/auth/**
+  - src/payments/**
+```
+
+`inspect` reads the live GitHub PR body, file list, CI rollup, and head SHA.
+The trust reviewer compares those facts with the receipt and policy, then
+posts a Switch decision card with its evidence fingerprint. Approval passes
+the reviewed SHA to GitHub's `--match-head-commit`; a changed branch is refused
+instead of merging under stale evidence. Blocked paths remain blocked even
+when their tests are green.
 
 ## What Switch does here
 
@@ -117,8 +146,9 @@ crew has no room, no addressing, no gate input, and no morning handoff.
   are disclosed in the room, PR receipts, and evidence documents.
 - The judge demo is deterministic rehearsal mode: it uses real Git branches,
   target tests, receipt validation, collision scanning, gate decisions, and
-  ledger reporting, but uses a temporary local remote instead of creating or
-  merging public GitHub PRs.
+  ledger reporting. It also demonstrates a policy-blocked migration and
+  approval invalidation after rebase, but uses a temporary local remote instead
+  of creating or merging public GitHub PRs.
 - Earlier ledger records predate worker attribution and therefore appear as
   `unassigned`; new task records store the worker explicitly.
 - The stack is pinned to Switch `0.31.0`. Its documented deltas—including

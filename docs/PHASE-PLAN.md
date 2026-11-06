@@ -166,6 +166,20 @@ P5 exit: accelerated run → correct report; fixture replay deterministic.
 
 P6 exit: fresh-clone works; verify green; submission materials ready.
 
+### P7 — trust control tower — Nov 6
+
+7.1 Repository-owned `crew/nightshift.policy.yml`: change-count and budget
+    caps, blocked paths, and explicit-review paths
+7.2 Independent deterministic reviewer compares GitHub's actual diff and head
+    SHA with receipts and policy; Switch decision card + `inspect <task-id>`
+7.3 Approval bound to the reviewed SHA via GitHub `--match-head-commit`; any
+    push or rebase creates a new evidence fingerprint
+7.4 Accelerated live Switch demo: reviewer blocks a green migration, collision
+    rebase expires approval, refreshed evidence lands; tests + tag `phase/7`
+
+P7 exit: a human can inspect one compact evidence card in Switch; protected
+work is refused despite green tests; stale approval cannot merge a new commit.
+
 ---
 
 ## Standing rules of engagement while executing

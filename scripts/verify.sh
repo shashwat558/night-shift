@@ -125,6 +125,13 @@ else
     fail "phase-6 checks failed (see node scripts/p6-checks.mjs)"
 fi
 
+# trust-control additions: repository policy, independent review, SHA-bound gate
+if node scripts/p7-checks.mjs; then
+    pass "trust-control policy, reviewer challenge, evidence card, and exact-SHA merge"
+else
+    fail "trust-control checks failed (see node scripts/p7-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

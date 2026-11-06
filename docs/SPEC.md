@@ -138,6 +138,8 @@ One JSON object per event, appended, never rewritten:
 `type` ∈ {goal_received, taskslips_written, assignment, worker_started,
 worker_finished, pr_opened, receipt_ok, needs_eyes, gate_result, merge,
 rollback, block, negotiation, negotiation_result, report_posted, error}.
+Phase 7 also appends `policy_result` and `review_result`, each bound to the PR
+head SHA and evidence fingerprint.
 
 ### 4.4 Room message grammar (the whole crew speaks these)
 

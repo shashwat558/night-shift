@@ -10,7 +10,7 @@ enforces CI with every merge gated behind human sign-off in the room, and at
 This file is plain-English documentation of every component: what it does,
 how it talks to the other parts, and what breaks if you delete it. Components
 below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: end of phase 6.)*
+phase actually builds them. *(Last updated: trust control tower, phase 7.)*
 
 ## Switch server (built phase 0)
 
@@ -230,6 +230,28 @@ close the fresh-clone boundary. Bootstrap clones the separately versioned
 target, installs locked dependencies, builds the supervisor, and generates
 local secrets only when no `ops/.env` exists. Runtime secrets, agent state,
 reports, and the nested target remain ignored.
+
+## Trust control tower (built phase 7)
+
+`crew/nightshift.policy.yml` is the repository owner's versioned boundary:
+maximum diff size, maximum slip budget, paths blocked from overnight approval,
+paths that require explicit review, and whether the independent reviewer is
+required. `src/policy.ts` parses the small YAML contract and evaluates the
+actual GitHub file list. Policy prose from an agent is never an input.
+
+`src/reviewer.ts` compares four independent facts: GitHub's head SHA and file
+list, the worker receipt, CI truth, and repository policy. A missing SHA,
+receipt/diff mismatch, failed test proof, or blocked path becomes a challenge.
+Sensitive paths become a visible human-review finding. `src/evidence.ts`
+hashes those inputs into a stable evidence fingerprint and renders the compact
+decision card posted through Switch.
+
+Humans can ask `@shift-supervisor inspect <task-id>` without changing the PR.
+Approval recomputes the same evidence at read time, posts it in Switch, and
+calls GitHub merge with `--match-head-commit <reviewed-sha>`. A concurrent push
+therefore fails the merge instead of inheriting an approval for older code.
+The ledger records `policy_result`, `review_result`, gate, and merge events with
+the SHA and fingerprint.
 
 ## supervisor/dev-tools/groundcheck.mjs (built phase 0)
 

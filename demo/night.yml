@@ -10,12 +10,12 @@ slips:
     file: demo/shared.txt
     content: first candidate landed
   - id: DEMO-02
-    title: Candidate rejected at the trust gate
+    title: Protected migration challenged by the reviewer
     worker: nightshift-worker-2
     outcome: rollback
-    file: demo/rollback.txt
-    content: candidate intentionally rolled back
-    rollback_reason: scripted scope review rejection
+    file: migrations/demo.sql
+    content: alter table pets add column secret text;
+    rollback_reason: trust policy blocks overnight migrations
   - id: DEMO-03
     title: Colliding candidate rebased after negotiation
     worker: nightshift-worker-2

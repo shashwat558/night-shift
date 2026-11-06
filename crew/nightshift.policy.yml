@@ -1,0 +1,18 @@
+version: 1
+max_changed_files: 8
+max_budget_minutes: 30
+reviewer_required: true
+
+# These paths are never approved by the overnight gate. A person can prepare
+# a separate daytime PR with the repository's normal review process.
+blocked_paths:
+  - migrations/**
+  - .github/workflows/**
+  - infra/production/**
+
+# Changes here may proceed only after the reviewer calls them out in the
+# Switch decision card and a human explicitly approves the exact commit.
+review_paths:
+  - src/auth/**
+  - src/payments/**
+  - package-lock.json

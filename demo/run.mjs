@@ -72,12 +72,16 @@ if (lintOnly) process.exit(0);
 
 const dist = join(ROOT, "supervisor", "dist", "src");
 if (!existsSync(join(dist, "gates.js"))) fail("supervisor is not built; run npm run build --prefix supervisor");
-const [{ renderReceipts }, { validateReceiptBlock, decideGate }, { scanCollisions, parseClaim, decideClaims }, { renderShiftReport }] = await Promise.all([
+const [{ renderReceipts }, { validateReceiptBlock, decideGate }, { scanCollisions, parseClaim, decideClaims }, { renderShiftReport }, { loadPolicy, evaluatePolicy }, { reviewCandidate }, { createEvidenceBundle, renderDecisionCard }] = await Promise.all([
   import(pathToFileURL(join(dist, "prs.js"))),
   import(pathToFileURL(join(dist, "gates.js"))),
   import(pathToFileURL(join(dist, "negotiation.js"))),
   import(pathToFileURL(join(dist, "report.js"))),
+  import(pathToFileURL(join(dist, "policy.js"))),
+  import(pathToFileURL(join(dist, "reviewer.js"))),
+  import(pathToFileURL(join(dist, "evidence.js"))),
 ]);
+const policy = loadPolicy(join(ROOT, "crew", "nightshift.policy.yml"));
 
 const target = join(ROOT, "target");
 if (!existsSync(join(target, ".git"))) fail("target repo missing; run ./scripts/bootstrap.sh");
@@ -135,14 +139,19 @@ for (let index = 0; index < night.slips.length; index++) {
   const test = run("npm", ["test"], work, { timeout: 120_000 });
   run("git", ["add", item.file], work);
   run("git", ["commit", "-qm", `${item.id}: ${item.title}`], work);
+  const headSha = run("git", ["rev-parse", "HEAD"], work).stdout.trim();
   run("git", ["push", "-q", "-u", "origin", branch], work);
   const slip = { id: item.id, backlog_ref: `DEMO-${index + 1}`, title: item.title, assignee: item.worker, scope: item.title, files_allowed: [item.file], acceptance: ["target test suite passes"], time_budget_minutes: 2 };
   const receipts = renderReceipts(slip, { filesTouched: [item.file], testPass: true, testOutput: test.stdout, startedAt: 0, finishedAt: 30_000, timedOut: false, providerOutput: "" }, { found: true, summary: item.title, riskCall: "low — isolated scripted demo file", deviations: "none" });
   const receipt = validateReceiptBlock(receipts, { taskId: item.id, filesAllowed: [item.file], budgetMinutes: 2 });
   if (!receipt.ok) fail(`${item.id} receipt rejected: ${receipt.gaps.join("; ")}`);
-  prepared.set(item.id, { item, slip, branch, receipt });
+  const policyResult = evaluatePolicy(policy, { files: [item.file], budgetMinutes: 2, risk: receipt.riskLevel });
+  const reviewer = reviewCandidate({ headSha, actualFiles: [item.file], receipt, policy, policyResult });
+  const evidence = createEvidenceBundle({ taskId: item.id, prNumber: 900 + index, headSha, files: [item.file], ci: { state: "green", detail: "real local target suite" }, receipt, policy: policyResult, reviewer });
+  prepared.set(item.id, { item, slip, branch, receipt, evidence, receipts });
   events.push({ ts: stamp(), taskId: item.id, worker: item.worker, branch, prUrl: null, prNumber: 900 + index, testPass: true, blocked: false, budgetMin: 2, spentMin: 0.5 });
   await post(`${item.worker} finished ${item.id}; tests PASS; receipts clean; draft demo PR #${900 + index}`);
+  await post(`🕵 trust-reviewer ${item.id}: ${reviewer.verdict} — ${reviewer.summary}`);
 }
 pass("all three candidate branches passed the real target test suite and receipt validation");
 
@@ -171,14 +180,21 @@ for (const item of [mergeItem, rollbackItem, collisionItem]) {
   const expected = item.outcome === "rollback" ? "rollback" : "merge";
   if (decision.action !== expected) fail(`${item.id} gate chose ${decision.action}, expected ${expected}`);
 }
+if (prepared.get(mergeItem.id).evidence.reviewer.verdict !== "clear") fail(`${mergeItem.id} should be reviewer-clear`);
+if (prepared.get(rollbackItem.id).evidence.reviewer.verdict !== "challenge") fail(`${rollbackItem.id} should be challenged by policy`);
+if (prepared.get(collisionItem.id).evidence.reviewer.verdict !== "clear") fail(`${collisionItem.id} should initially be reviewer-clear`);
 
 run("git", ["checkout", "-q", "main"], work);
+await post(renderDecisionCard(prepared.get(mergeItem.id).evidence));
+const approvedHead = run("git", ["rev-parse", `shift/${mergeItem.id}`], work).stdout.trim();
+if (approvedHead !== prepared.get(mergeItem.id).evidence.headSha) fail("merge candidate changed after its decision card");
 run("git", ["merge", "-q", "--no-ff", `shift/${mergeItem.id}`, "-m", `merge ${mergeItem.id}`], work);
-events.push({ ts: stamp(), actor: "shift-supervisor", type: "merge", refs: { task: mergeItem.id, pr: 900 } });
+events.push({ ts: stamp(), actor: "shift-supervisor", type: "merge", refs: { task: mergeItem.id, pr: 900, head_sha: approvedHead, evidence: prepared.get(mergeItem.id).evidence.fingerprint } });
 await post(`approve ${mergeItem.id}: receipts clean, CI green, merged`);
 
+await post(renderDecisionCard(prepared.get(rollbackItem.id).evidence));
 run("git", ["push", "-q", "origin", "--delete", `shift/${rollbackItem.id}`], work);
-events.push({ ts: stamp(), actor: "shift-supervisor", type: "rollback", refs: { task: rollbackItem.id, why: rollbackItem.rollback_reason } });
+events.push({ ts: stamp(), actor: "shift-supervisor", type: "rollback", refs: { task: rollbackItem.id, why: rollbackItem.rollback_reason, head_sha: prepared.get(rollbackItem.id).evidence.headSha, evidence: prepared.get(rollbackItem.id).evidence.fingerprint } });
 await post(`rollback ${rollbackItem.id}: ${rollbackItem.rollback_reason}; branch deleted`);
 
 run("git", ["checkout", "-q", `shift/${collisionItem.id}`], work);
@@ -187,10 +203,20 @@ if (rebase.status === 0) fail("deliberate collision unexpectedly rebased without
 writeFileSync(join(work, collisionItem.file), `${mergeItem.content}\n${collisionItem.content}\n`);
 run("git", ["add", collisionItem.file], work);
 run("git", ["rebase", "--continue"], work, { env: { GIT_EDITOR: "true" } });
-run("npm", ["test"], work, { timeout: 120_000 });
+const retest = run("npm", ["test"], work, { timeout: 120_000 });
+const rebasedHead = run("git", ["rev-parse", "HEAD"], work).stdout.trim();
+const oldEvidence = prepared.get(collisionItem.id).evidence;
+if (rebasedHead === oldEvidence.headSha) fail("rebase did not invalidate the old commit-bound evidence");
+const refreshedReceipts = renderReceipts(prepared.get(collisionItem.id).slip, { filesTouched: [collisionItem.file], testPass: true, testOutput: retest.stdout, startedAt: 0, finishedAt: 30_000, timedOut: false, providerOutput: "" }, { found: true, summary: collisionItem.title, riskCall: "low — rebased scripted demo file", deviations: "none" });
+const refreshedReceipt = validateReceiptBlock(refreshedReceipts, { taskId: collisionItem.id, filesAllowed: [collisionItem.file], budgetMinutes: 2 });
+const refreshedPolicy = evaluatePolicy(policy, { files: [collisionItem.file], budgetMinutes: 2, risk: refreshedReceipt.riskLevel });
+const refreshedReviewer = reviewCandidate({ headSha: rebasedHead, actualFiles: [collisionItem.file], receipt: refreshedReceipt, policy, policyResult: refreshedPolicy });
+const refreshedEvidence = createEvidenceBundle({ taskId: collisionItem.id, prNumber: 902, headSha: rebasedHead, files: [collisionItem.file], ci: { state: "green", detail: "retest after rebase" }, receipt: refreshedReceipt, policy: refreshedPolicy, reviewer: refreshedReviewer });
+await post(`approval expired for ${collisionItem.id}: rebase changed commit ${oldEvidence.headSha.slice(0, 8)} -> ${rebasedHead.slice(0, 8)}; evidence refreshed`);
+await post(renderDecisionCard(refreshedEvidence));
 run("git", ["checkout", "-q", "main"], work);
 run("git", ["merge", "-q", "--no-ff", `shift/${collisionItem.id}`, "-m", `merge ${collisionItem.id}`], work);
-events.push({ ts: stamp(), actor: "shift-supervisor", type: "merge", refs: { task: collisionItem.id, pr: 902 } });
+events.push({ ts: stamp(), actor: "shift-supervisor", type: "merge", refs: { task: collisionItem.id, pr: 902, head_sha: rebasedHead, evidence: refreshedEvidence.fingerprint } });
 await post(`approve ${collisionItem.id}: rebased in agreed order, re-tested, merged`);
 
 const report = renderShiftReport(events, "2026-11-06");

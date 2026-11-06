@@ -617,3 +617,32 @@ local ignored credentials. It passed every phase, both clean-worktree checks,
 and the final `ALL ... verify passed (offline)` line. The documented Compose
 `up -d --wait` command was also rerun directly and all service conditions
 completed successfully.
+
+## Phase 7 — trust control tower (2026-11-06)
+
+Night Shift now treats the morning handoff as a commit-bound evidence decision.
+The repository owns `crew/nightshift.policy.yml`: changed-file and budget caps,
+blocked paths, sensitive paths, and the reviewer requirement. The evaluator
+uses GitHub's actual PR file list. `reviewer.ts` independently compares that
+list and head SHA with the receipt and policy. `evidence.ts` hashes the result
+and renders a compact Switch decision card.
+
+The runtime accepts `@shift-supervisor inspect <task-id>` for a read-only card.
+Approval recomputes and posts the card, records `policy_result` and
+`review_result`, then passes the reviewed SHA to
+`gh pr merge --match-head-commit`. Gate and merge ledger records carry that SHA and evidence
+fingerprint. Missing commit identity, receipt/diff disagreement, failed proof,
+or a blocked path refuses approval with exact findings.
+
+The accelerated demo now stages a green migration under `migrations/`. The
+trust reviewer challenges it and policy refuses approval, so it is rolled
+back. The collision candidate is initially clear; after its required rebase,
+its SHA changes, the room announces that approval expired, tests rerun, and a
+new card/fingerprint is posted before merge. The live Switch rehearsal
+completed in 15.4 seconds after the pinned stack was restarted.
+
+A separate human `inspect B-20261105-03` exercised the production GitHub path
+without mutating its held draft PR. Switch posted real head `77a2eef54f5c`,
+actual files, green CI, policy pass, reviewer clear, and evidence
+`4a82ff369ce944a0`. The raw post IDs are preserved in
+`docs/phase-7-room-transcript.json`.

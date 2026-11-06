@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-11-06T10:04:45.000Z",
+  "room": "overnight-crew",
+  "transport": "Switch 0.31.0 bridged to Mattermost",
+  "scenario": "scripted accelerated trust-control rehearsal",
+  "posts": [
+    {
+      "id": "148wro6ad3bw5pts6j84sjstee",
+      "message": "[scripted demo] Goal: land three budgeted overnight candidates through the trust gates."
+    },
+    {
+      "id": "aew54k8hdfdb7pyytprqiacdzw",
+      "message": "[scripted demo] Night roster: 3 slips dispatched."
+    },
+    {
+      "id": "njy5xrirdirw7qjgh43pfmxxcr",
+      "message": "[scripted demo] DEMO-01 finished; tests PASS; candidate ready."
+    },
+    {
+      "id": "uq51dyo97b8jixmn1s88etrfgh",
+      "message": "[scripted demo] trust-reviewer DEMO-01: clear."
+    },
+    {
+      "id": "kxpmdc4y7tdsdx4u75eqwoos8h",
+      "message": "[scripted demo] DEMO-02 finished; tests PASS; candidate ready."
+    },
+    {
+      "id": "ccyqsj3e77gzjq3u8my96ria7o",
+      "message": "[scripted demo] trust-reviewer DEMO-02: challenge; migrations/demo.sql matches blocked path migrations/**."
+    },
+    {
+      "id": "ahwkcmaca7fczfao1mejqgpqnh",
+      "message": "[scripted demo] DEMO-03 finished; tests PASS; candidate ready."
+    },
+    {
+      "id": "mmcsm199pp849ycdo37t8181zy",
+      "message": "[scripted demo] trust-reviewer DEMO-03: clear."
+    },
+    {
+      "id": "x4zdbunwy3gqx8i16c3hiwcacc",
+      "message": "[scripted demo] collision agreement: DEMO-01 lands before DEMO-03."
+    },
+    {
+      "id": "19p5ogf7j3f8xmwy1tpep9876h",
+      "message": "Trust decision — DEMO-01 | PR #900 | commit 464f36d722fd | evidence 167d61ac52779064 | CI green | receipt valid | policy pass | reviewer clear | decision eligible to merge | changed demo/shared.txt"
+    },
+    {
+      "id": "7aq4xupaxpnp3g8zhf9dnrr4ao",
+      "message": "[scripted demo] DEMO-01 merged at reviewed commit 464f36d722fd."
+    },
+    {
+      "id": "w4pg93bcfbrbmea4n66k1fdouo",
+      "message": "Trust decision — DEMO-02 | PR #901 | commit de6183e16cb2 | evidence a087d5caffd246f6 | CI green | receipt valid | policy block | reviewer challenge | decision refused | migrations/demo.sql matches migrations/**"
+    },
+    {
+      "id": "jd4asa1a9infjdhufuf8ab4dza",
+      "message": "[scripted demo] DEMO-02 rolled back: repository policy blocks overnight migrations."
+    },
+    {
+      "id": "51jo8aqaupf9pqzppaccf46yjh",
+      "message": "[scripted demo] DEMO-03 approval expired after rebase: 0ba87f66 -> 621f18c5; rerunning proof."
+    },
+    {
+      "id": "3w15qscpdjrjpctrm3z9hq4wqo",
+      "message": "Trust decision — DEMO-03 | PR #902 | commit 621f18c5f57b | evidence fa68c253e56930cb | CI green | receipt valid | policy pass | reviewer clear | decision eligible to merge"
+    },
+    {
+      "id": "h8bqns3xitnt3jnuny4gg9okoe",
+      "message": "[scripted demo] DEMO-03 merged at refreshed reviewed commit 621f18c5f57b."
+    },
+    {
+      "id": "y8t9zrknuirh3rrqhn5ixwr8de",
+      "message": "[scripted demo] Morning report: 2 merged, 1 rolled back; policy challenge and stale-approval refresh proven."
+    },
+    {
+      "id": "sm3jpobunj8jfnuyarifjbfmoa",
+      "message": "@shift-supervisor inspect B-20261105-03"
+    },
+    {
+      "id": "boujb9myybbqdjfzeqh6r7rqqc",
+      "message": "Trust decision — B-20261105-03 | PR #3 | commit 77a2eef54f5c | evidence 4a82ff369ce944a0 | receipts valid | CI green | policy pass | reviewer clear | changed src/pagination.js, test/pets.test.js | decision human may approve this exact commit"
+    }
+  ]
+}

@@ -24,6 +24,7 @@ Address them to the supervisor in the room, verb-first:
 @shift-supervisor approve <task-id>
 @shift-supervisor rollback <task-id> [whatever your reason is — free text]
 @shift-supervisor hold <task-id>
+@shift-supervisor inspect <task-id>
 ```
 
 - `<task-id>` is the exact id from the taskslip / receipts block (e.g.
@@ -117,6 +118,7 @@ works. Ledger: `gate_result` (hold).
 | `@shift-supervisor approve <id>` | room | receipts → CI → merge (or a refusal reply) |
 | `@shift-supervisor rollback <id> <reason>` | room | close/revert + ledger + post |
 | `@shift-supervisor hold <id>` | room | stays draft, recorded |
+| `@shift-supervisor inspect <id>` | room | posts a policy/reviewer/CI/receipt card for the current commit; changes nothing |
 | emoji ✅/♻️/👀 | room | visual only — never read by the supervisor |
 
 ## Ledger events the gates write
