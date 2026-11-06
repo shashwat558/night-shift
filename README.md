@@ -15,6 +15,17 @@ checks the actual PR diff, an independent reviewer challenges receipt claims,
 and Switch posts a decision card bound to the PR's exact commit. A later push
 changes the evidence fingerprint and expires the earlier decision.
 
+## Landing page
+
+The project landing page lives in [`landing/`](landing/) and has no build-time
+dependencies. Preview it locally with:
+
+```sh
+python3 -m http.server 4173
+```
+
+Then open `http://127.0.0.1:4173/landing/`.
+
 ## Architecture
 
 ```mermaid

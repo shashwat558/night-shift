@@ -150,6 +150,12 @@ else
     fail "messaging integration checks failed (see node scripts/messaging-checks.mjs)"
 fi
 
+if node scripts/landing-checks.mjs; then
+    pass "Night Shift landing page structure, content, and accessibility"
+else
+    fail "landing page checks failed (see node scripts/landing-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"
