@@ -133,8 +133,8 @@ export class SwitchClient {
   private buildUrl(): string {
     const params = new URLSearchParams();
     params.set("connection_id", this.cfg.connectionId);
-    if (!this.claimDowngraded && this.roomClaimId()) {
-      params.set("rooms", this.roomClaimId() as string);
+    if (!this.claimDowngraded && this.roomClaimIds().length > 0) {
+      params.set("rooms", this.roomClaimIds().join(","));
     }
     params.set("scope", "all");
     params.set("filter", "all");
@@ -148,6 +148,10 @@ export class SwitchClient {
 
   roomClaimId(): string | null {
     return this.cfg.roomId;
+  }
+
+  roomClaimIds(): string[] {
+    return this.cfg.roomIds.length > 0 ? this.cfg.roomIds : this.cfg.roomId ? [this.cfg.roomId] : [];
   }
 
   private openSocket(): void {

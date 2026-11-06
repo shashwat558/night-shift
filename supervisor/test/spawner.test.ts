@@ -63,6 +63,7 @@ function makeTarget(): void {
     agentKey: "sk-test",
     room: "overnight-crew",
     roomId: "room-1",
+    roomIds: ["room-1"],
     crewPrefix: "nightshift",
     targetDir,
     repoRoot: "/tmp/opencode",

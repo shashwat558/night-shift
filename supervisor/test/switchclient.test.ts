@@ -32,6 +32,7 @@ async function firstConn(srv: FakeSwitchServer, ms = 3000): Promise<HarnessConne
 }
 
 const ROOM = "00000000-0000-0000-0000-000000000000";
+const ROOM_TWO = "11111111-1111-1111-1111-111111111111";
 
 function statePath(): string {
   process.env.SUPERVISOR_STATE_PATH = `/tmp/opencode/nightshift-test-state-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
@@ -74,6 +75,28 @@ function domainEvent(seq: number, sender: string, body: string, addressed: boole
 function evicted(code: string, reason = ""): string {
   return JSON.stringify({ type: "evicted", code, reason });
 }
+
+test("declares every configured Switch room on the WebSocket", async (t) => {
+  statePath();
+  const srv = new FakeSwitchServer();
+  t.after(() => srv.close());
+  servers.push(srv);
+  const port = await srv.listen();
+  const client = new SwitchClient(
+    testConfig({
+      apiBase: `http://127.0.0.1:${port}`,
+      agentId: "agent-1",
+      agentKey: "key-1",
+      roomId: ROOM,
+      roomIds: [ROOM, ROOM_TWO],
+    }),
+    {},
+  );
+  client.start();
+  const conn = await firstConn(srv);
+  assert.equal(conn.url.searchParams.get("rooms"), `${ROOM},${ROOM_TWO}`);
+  client.stop();
+});
 
 test("connection_state adopted; pongs carry cursor; only addressed messages dispatch", async (t) => {
   statePath();

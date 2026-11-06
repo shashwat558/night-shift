@@ -132,6 +132,13 @@ else
     fail "trust-control checks failed (see node scripts/p7-checks.mjs)"
 fi
 
+# multi-platform additions: secure Slack onboarding + multi-room routing
+if node scripts/messaging-checks.mjs; then
+    pass "Slack connector, multi-room routing, and Dockerized messaging adapters"
+else
+    fail "messaging integration checks failed (see node scripts/messaging-checks.mjs)"
+fi
+
 ( cd target && git status --porcelain | grep -q . ) && true
 if [ -n "$(cd target && git status --porcelain)" ]; then
     fail "target worktree has uncommitted changes"

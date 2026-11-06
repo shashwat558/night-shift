@@ -31,6 +31,8 @@ export interface Config {
   room: string;
   /** Room id; resolved from the server at runtime when null. */
   roomId: string | null;
+  /** Every Switch room this process serves; roomId remains the primary room. */
+  roomIds: string[];
   /** Crew template team prefix (agent handles: {crewPrefix}-night-lead …). */
   crewPrefix: string;
   /** The crew's git repo (the simulated company). */
@@ -100,7 +102,12 @@ export function loadConfig(rawEnv: Record<string, string>): Config {
     .map(([k]) => k);
 
   const room = rawEnv.SWITCH_ROOM ?? crewState?.room.name ?? "overnight-crew";
-  const roomId = rawEnv.SWITCH_ROOM_ID || crewState?.room.id || null;
+  const configuredRoomIds = (rawEnv.SWITCH_ROOM_IDS ?? "")
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean);
+  const roomId = rawEnv.SWITCH_ROOM_ID || configuredRoomIds[0] || crewState?.room.id || null;
+  const roomIds = [...new Set([...(roomId ? [roomId] : []), ...configuredRoomIds])];
   const targetDir = rawEnv.TARGET_REPO
     ? resolve(SUPERVISOR_DIR, rawEnv.TARGET_REPO)
     : resolve(SUPERVISOR_DIR, "..", "target");
@@ -119,6 +126,7 @@ export function loadConfig(rawEnv: Record<string, string>): Config {
     agentKey,
     room,
     roomId,
+    roomIds,
     crewPrefix: rawEnv.CREW_TEAM ?? crewState?.team ?? "nightshift",
     targetDir,
     repoRoot: REPO_ROOT,
@@ -145,7 +153,7 @@ export function configFromFile(envPath = join(SUPERVISOR_DIR, ".env")): Config {
 
 /** For offline tests: synthesize a full Config without touching any file. */
 export function testConfig(overrides: Partial<Config> = {}): Config {
-  return {
+  const config: Config = {
     apiBase: "http://127.0.0.1:1",
     gatewayBase: "http://127.0.0.1:1/gateway",
     agentName: "shift-supervisor",
@@ -153,6 +161,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     agentKey: "test-agent-key",
     room: "overnight-crew",
     roomId: "00000000-0000-0000-0000-000000000000",
+    roomIds: ["00000000-0000-0000-0000-000000000000"],
     crewPrefix: "nightshift",
     targetDir: resolve(SUPERVISOR_DIR, "..", "target"),
     repoRoot: REPO_ROOT,
@@ -161,4 +170,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     connectionId: randomUUID(),
     ...overrides,
   };
+  if (overrides.roomId !== undefined && overrides.roomIds === undefined) {
+    config.roomIds = overrides.roomId ? [overrides.roomId] : [];
+  }
+  return config;
 }

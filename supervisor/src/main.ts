@@ -351,8 +351,8 @@ export async function main(): Promise<void> {
   };
 
   // ---- room id ----------------------------------------------------------------
-  const roomId = cfg.roomId;
-  if (!roomId) {
+  const primaryRoomId = cfg.roomId;
+  if (!primaryRoomId) {
     log("SWITCH_ROOM_ID not set — cannot post messages without a room id. Set SWITCH_ROOM_ID in supervisor/.env");
     process.exit(1);
   }
@@ -365,13 +365,13 @@ export async function main(): Promise<void> {
   }
   log(`night limits: ${limits.maxSlips} slip(s) max, +${Math.round(limits.graceMs / 60_000)} min grace per slip`);
 
-  log(`starting — agent ${cfg.agentId} in room ${roomId} (provider: ${cfg.provider})`);
+  log(`starting — agent ${cfg.agentId} in ${cfg.roomIds.length} room(s): ${cfg.roomIds.join(", ")} (provider: ${cfg.provider})`);
 
   // ---- Switch client ----------------------------------------------------------
   const ctx: NightContext = {
     cfg,
     client: null as unknown as SwitchClient,
-    roomId,
+    roomId: primaryRoomId,
     busy: false,
     registry,
     limits,
@@ -390,14 +390,14 @@ export async function main(): Promise<void> {
   ctx.client = client;
 
   let reportBusy = false;
-  const reportNow = async (trigger: "clock" | "room"): Promise<void> => {
+  const reportNow = async (trigger: "clock" | "room", targetRoomId = primaryRoomId): Promise<void> => {
     if (reportBusy) return;
     reportBusy = true;
     try {
-      const artifact = await publishShiftReport(cfg.repoRoot, trigger, content => client.postMessage(roomId, content));
+      const artifact = await publishShiftReport(cfg.repoRoot, trigger, content => client.postMessage(targetRoomId, content));
       log(`shift report ${artifact.reused ? "reused" : "posted"}: ${artifact.relativeFile} (${artifact.eventCount} event(s))`);
       if (artifact.reused && trigger === "room") {
-        await client.postMessage(roomId, `Shift report already posted: \`${artifact.relativeFile}\`.`);
+        await client.postMessage(targetRoomId, `Shift report already posted: \`${artifact.relativeFile}\`.`);
       }
     } catch (err) {
       log(`report error: ${String(err)}`);
@@ -407,22 +407,23 @@ export async function main(): Promise<void> {
     }
   };
 
-  let negotiation: { collision: Collision; round: 1 | 2; claims: Map<string, { sender: string; claim: Claim }> } | null = null;
-  const beginNegotiation = async (a: string, b: string): Promise<void> => {
-    if (negotiation) { await client.postMessage(roomId, "A collision negotiation is already open."); return; }
+  let negotiation: { roomId: string; collision: Collision; round: 1 | 2; claims: Map<string, { sender: string; claim: Claim }> } | null = null;
+  const beginNegotiation = async (a: string, b: string, targetRoomId: string): Promise<void> => {
+    if (negotiation) { await client.postMessage(targetRoomId, "A collision negotiation is already open."); return; }
     const tasks = [registry.get(a), registry.get(b)];
-    if (!tasks[0] || !tasks[1] || a === b) { await client.postMessage(roomId, `Unknown or duplicate open tasks: ${a}, ${b}`); return; }
+    if (!tasks[0] || !tasks[1] || a === b) { await client.postMessage(targetRoomId, `Unknown or duplicate open tasks: ${a}, ${b}`); return; }
     const fetched = await exec("git", ["fetch", "--quiet", "origin"], cfg.targetDir, 60_000);
-    if (!fetched.ok) { await client.postMessage(roomId, `Collision scan blocked: git fetch failed (${fetched.output.slice(-150)})`); return; }
+    if (!fetched.ok) { await client.postMessage(targetRoomId, `Collision scan blocked: git fetch failed (${fetched.output.slice(-150)})`); return; }
     const matches = await scanCollisions(cfg.targetDir, [tasks[0], tasks[1]]);
-    if (!matches.length) { await client.postMessage(roomId, `${a} and ${b} have no changed files in common.`); return; }
-    negotiation = { collision: matches[0]!, round: 1, claims: new Map() };
+    if (!matches.length) { await client.postMessage(targetRoomId, `${a} and ${b} have no changed files in common.`); return; }
+    negotiation = { roomId: targetRoomId, collision: matches[0]!, round: 1, claims: new Map() };
     appendGateEvent("negotiation", { task: a, opponent: b, paths: matches[0]!.paths, round: 1 });
-    await client.postMessage(roomId, collisionPrompt(matches[0]!, 1));
+    await client.postMessage(targetRoomId, collisionPrompt(matches[0]!, 1));
   };
   const receiveClaim = async (msg: AddressedMessage): Promise<void> => {
     const session = negotiation;
     if (!session) return;
+    if (msg.roomId !== session.roomId) return;
     const ids = [session.collision.left.taskId, session.collision.right.taskId];
     for (const id of ids) {
       const claim = parseClaim(msg.body, id, session.round);
@@ -433,15 +434,15 @@ export async function main(): Promise<void> {
       const decision = decideClaims(session.collision, [...session.claims.values()].map(v => v.claim));
       if (decision.kind === "order") {
         appendGateEvent("negotiation_result", { task: ids[0], opponent: ids[1], agreed_order: decision.order, path: decision.path });
-        await client.postMessage(roomId, `🤝 Agreed landing order for ${decision.path}: ${decision.order.join(" → ")}. First PR lands, then second rebases and re-tests before its gate.`);
+        await client.postMessage(session.roomId, `🤝 Agreed landing order for ${decision.path}: ${decision.order.join(" → ")}. First PR lands, then second rebases and re-tests before its gate.`);
         negotiation = null;
       } else if (session.round === 1) {
-        await client.postMessage(roomId, `Round 1 needs clarification: ${decision.reason}. Claims: ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
+        await client.postMessage(session.roomId, `Round 1 needs clarification: ${decision.reason}. Claims: ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
         session.round = 2; session.claims.clear();
-        await client.postMessage(roomId, collisionPrompt(session.collision, 2));
+        await client.postMessage(session.roomId, collisionPrompt(session.collision, 2));
       } else {
         appendGateEvent("negotiation_result", { task: ids[0], opponent: ids[1], status: "escalated", why: decision.reason });
-        await client.postMessage(roomId, `👀 Collision escalated: ${decision.reason}. ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
+        await client.postMessage(session.roomId, `👀 Collision escalated: ${decision.reason}. ${decision.claims.map(c => `${c.taskId}: ${c.first} first on ${c.paths.join(", ")}`).join(" | ")}`);
         negotiation = null;
       }
       return;
@@ -451,27 +452,28 @@ export async function main(): Promise<void> {
   const listener = new Listener({
     onAddressed: (msg) => {
       if (!msg.isHuman) { void receiveClaim(msg); return; }        // humans post goals + gate commands
+      const replyRoomId = msg.roomId ?? primaryRoomId;
 
       if (/^(?:@shift-supervisor\s+)?shift report please$/i.test(msg.body)) {
-        void reportNow("room");
+        void reportNow("room", replyRoomId);
         return;
       }
 
       const startCollision = /^(?:@shift-supervisor\s+)?negotiate\s+(\S+)\s+(\S+)$/i.exec(msg.body);
       if (startCollision) {
-        void beginNegotiation(startCollision[1]!, startCollision[2]!).catch(err => log(`negotiation error: ${String(err)}`));
+        void beginNegotiation(startCollision[1]!, startCollision[2]!, replyRoomId).catch(err => log(`negotiation error: ${String(err)}`));
         return;
       }
       const inspect = /^(?:@shift-supervisor\s+)?inspect\s+([A-Za-z0-9][A-Za-z0-9._-]*)$/i.exec(msg.body);
       if (inspect) {
-        void inspectTask({ cfg, client, roomId, registry, by: msg.sender }, inspect[1] as string, { log });
+        void inspectTask({ cfg, client, roomId: replyRoomId, registry, by: msg.sender }, inspect[1] as string, { log });
         return;
       }
       // gate commands (§4.4) run even while a night is in flight
       const gate = parseGateCommand(msg.body);
       if (gate) {
         handleGateCommand(
-          { cfg, client, roomId, registry, by: msg.sender, },
+          { cfg, client, roomId: replyRoomId, registry, by: msg.sender, },
           gate,
           { log },
         ).catch((err) => {
@@ -485,12 +487,12 @@ export async function main(): Promise<void> {
       if (ctx.busy) {
         log("goal received but already running — ignored");
         client
-          .postMessage(roomId, "I'm already running tonight's goal. Wait for the current shift to finish.")
+          .postMessage(replyRoomId, "I'm already running tonight's goal. Wait for the current shift to finish.")
           .catch(() => {});
         return;
       }
       ctx.busy = true;
-      handleGoal(ctx, msg, log)
+      handleGoal({ ...ctx, roomId: replyRoomId }, msg, log)
         .catch((err) => {
           log(`handleGoal error: ${String(err)}`);
         })
@@ -534,7 +536,7 @@ export async function main(): Promise<void> {
 
   // ---- start -----------------------------------------------------------------
   client.start();
-  log(`listening for "tonight: …" messages from humans in room ${roomId}`);
+  log(`listening for "tonight: …" messages from humans in rooms ${cfg.roomIds.join(", ")}`);
   log(`ledger: ${ledgerPath()}`);
 }
 

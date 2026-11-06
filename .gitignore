@@ -1,5 +1,6 @@
 # Night Shift secrets/stack state — never commit
 ops/.env
+ops/slack.env
 ops/.agents/
 ops/.registration-key.json
 ops/generate-env-secrets.sh

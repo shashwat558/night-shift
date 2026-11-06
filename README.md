@@ -65,6 +65,25 @@ local secrets when it is absent. It never replaces an existing environment.
 The Gateway is at `http://localhost:3100`, Mattermost at
 `http://localhost:8065`, and Switch Core at `http://localhost:8000`.
 
+## Slack, Discord, Teams, and Telegram
+
+The same Dockerized Switch Core already includes all collaboration adapters;
+Night Shift does not run a separate bot or bypass Switch. For Slack, generate
+the version-matched manifest and connect the credentials with:
+
+```sh
+node scripts/connect-slack.mjs manifest
+cp ops/slack.env.example ops/slack.env
+chmod 600 ops/slack.env
+# Fill the xoxb- and xapp- values, then:
+node scripts/connect-slack.mjs connect
+```
+
+The supervisor accepts a comma-separated `SWITCH_ROOM_IDS` list and returns
+each command, decision card, and outcome to its originating room. See the
+[messaging-app guide](docs/messaging-apps.md) for channel adoption and the
+Discord, Telegram, and Teams boundaries.
+
 For a terminal-only rehearsal that still creates real local branches, runs the
 real target tests, validates receipts, exercises the gate table, forces and
 resolves the configured Git collision, and replays its ledger:
@@ -132,6 +151,7 @@ crew has no room, no addressing, no gate input, and no morning handoff.
 
 - [Architecture](ARCHITECTURE.md)
 - [Trust-gate manual](docs/gates-manual.md)
+- [Messaging-app setup](docs/messaging-apps.md)
 - [Phase 3 gate rehearsal](docs/phase-3-live-test.md)
 - [Phase 4 collision rehearsal](docs/phase-4-live-test.md)
 - [Phase 5 report rehearsal](docs/phase-5-live-test.md)

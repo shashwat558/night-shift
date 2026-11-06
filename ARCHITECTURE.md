@@ -35,6 +35,16 @@ log — each agent gets its own bot account, and the human sees everything the
 crew says. Delete it and the human loses the in-room view, but Switch still
 logs rooms server-side.
 
+## Collaboration adapters
+
+Slack, Discord, Teams, Telegram, and Mattermost terminate in Switch Core's
+collaboration bridge. Night Shift never holds a platform webhook endpoint and
+never parses vendor event payloads. `scripts/connect-slack.mjs` uses the live
+Gateway contract to validate a workspace's Socket Mode tokens and create the
+Slack bridge without printing secrets. `SWITCH_ROOM_IDS` lets one supervisor
+claim multiple Switch rooms; every response is routed back to the room that
+originated the goal or gate, while the primary room receives scheduled reports.
+
 ## The crew template + schemas (built phase 1)
 
 `crew/` is the crew's standard operating procedure:
