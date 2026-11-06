@@ -1,5 +1,5 @@
-// supervisor/src/spawner.ts — the headless coder runs (SPEC §2: `claude -p` /
-// `opencode run` child processes in target/; decision D1: opencode default).
+// supervisor/src/spawner.ts — headless coder runs (`opencode run`, `codex
+// exec`, or `claude -p`) as child processes in target/.
 //
 // Flow per slip:
 //   1. require a CLEAN target worktree (never mix the crew's work with
@@ -19,7 +19,7 @@
 import { spawn } from "node:child_process";
 import { exec, type ExecResult } from "./exec.js";
 import type { Slip } from "./slips.js";
-import type { Config } from "./env.js";
+import type { Config, Provider } from "./env.js";
 
 export interface WipRun {
   slip: Slip;
@@ -75,9 +75,21 @@ export function providerPrompt(slip: Slip, budgetMin?: number): string {
   return lines.join("\n");
 }
 
-/** The provider CLI contract (decision D1 + provider abstraction): */
-export function providerArgs(provider: "opencode" | "claude", prompt: string): string[] | null {
+/** The provider CLI contract. Codex runs non-interactively, ephemerally, and
+ * inside its workspace-write sandbox; the supervisor's own budget and file
+ * whitelist checks remain the outer enforcement layer. */
+export function providerArgs(provider: Provider, prompt: string): string[] | null {
   if (provider === "opencode") return ["run", prompt];
+  if (provider === "codex") {
+    return [
+      "exec",
+      "--approve-for-me",
+      "--sandbox", "workspace-write",
+      "--ephemeral",
+      "--color", "never",
+      prompt,
+    ];
+  }
   if (provider === "claude") return ["-p", prompt];
   return null;
 }

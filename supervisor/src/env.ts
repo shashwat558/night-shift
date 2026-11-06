@@ -14,7 +14,8 @@ export const SUPERVISOR_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "
 // The supervisor sits at <repo>/supervisor; the monorepo root is one level up.
 export const REPO_ROOT = resolve(SUPERVISOR_DIR, "..");
 
-export type Provider = "opencode" | "claude";
+export const PROVIDERS = ["opencode", "codex", "claude"] as const;
+export type Provider = (typeof PROVIDERS)[number];
 
 export interface Config {
   /** Switch agent-bridge base URL (NOT the gateway). */
@@ -41,7 +42,7 @@ export interface Config {
   repoRoot: string;
   /** owner/name on GitHub (used by gh pr create / CI reads). */
   ghRepo: string | null;
-  /** Worker provider behind the spawner (decision D1: opencode default). */
+  /** Worker provider behind the spawner (OpenCode default; Codex/Claude selectable). */
   provider: Provider;
   /** Stable connection identity reused across reconnects AND restarts. */
   connectionId: string;
@@ -112,8 +113,15 @@ export function loadConfig(rawEnv: Record<string, string>): Config {
     ? resolve(SUPERVISOR_DIR, rawEnv.TARGET_REPO)
     : resolve(SUPERVISOR_DIR, "..", "target");
 
-  const providerRaw = (rawEnv.WORKER_PROVIDER ?? "opencode").toLowerCase();
-  const provider: Provider = providerRaw === "claude" ? "claude" : "opencode";
+  const providerRaw = (rawEnv.WORKER_PROVIDER ?? "opencode").trim().toLowerCase();
+  if (!(PROVIDERS as readonly string[]).includes(providerRaw)) {
+    const err = new Error(
+      `invalid WORKER_PROVIDER=${providerRaw || "<empty>"}; expected one of ${PROVIDERS.join(", ")}`,
+    );
+    err.name = "ConfigError";
+    throw err;
+  }
+  const provider = providerRaw as Provider;
 
   const apiPort = rawEnv.SWITCH_API_PORT ?? rawEnv.API_HOST_PORT ?? "8000";
   const gwPort = rawEnv.SWITCH_GATEWAY_PORT ?? rawEnv.GATEWAY_HOST_PORT ?? "3100";

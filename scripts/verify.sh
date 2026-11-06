@@ -24,11 +24,22 @@ else
     fail "node >=22 (got: ${node_ver:-none})"
 fi
 
-if command -v opencode >/dev/null 2>&1; then
-    pass "worker cli opencode present ($(opencode --version 2>/dev/null | head -n1))"
-else
-    fail "worker cli opencode absent"
+worker_provider="opencode"
+if [ -f supervisor/.env ]; then
+    configured_provider="$(sed -n 's/^WORKER_PROVIDER=//p' supervisor/.env | tail -n 1 | tr '[:upper:]' '[:lower:]')"
+    [ -n "$configured_provider" ] && worker_provider="$configured_provider"
 fi
+case "$worker_provider" in
+opencode|codex|claude)
+    if command -v "$worker_provider" >/dev/null 2>&1; then
+        worker_version="$("$worker_provider" --version 2>/dev/null | head -n1)"
+        pass "selected worker cli $worker_provider present (${worker_version:-version unknown})"
+    else
+        fail "selected worker cli $worker_provider absent"
+    fi
+    ;;
+*) fail "WORKER_PROVIDER invalid ($worker_provider; expected opencode, codex, or claude)" ;;
+esac
 
 if command -v gh >/dev/null 2>&1; then
     pass "gh present"

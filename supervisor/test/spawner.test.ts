@@ -1,5 +1,5 @@
 // supervisor/test/spawner.test.ts — offline: synthetic target repo (bare
-// origin + locally cloned worktree), a fake `opencode` provider binary on a
+// origin + locally cloned worktree), a fake provider binary on a
 // PATH shim dir, and a budget override for the kill-switch.
 // No AI is ever invoked; no network beyond the local git file transports.
 
@@ -95,8 +95,8 @@ function slipFixture(overrides?: Partial<Slip>): Slip {
   };
 }
 
-function writeFakeProvider(slip: Slip, body: string): void {
-  // a fake `opencode` binary: prints a receipts block, writes a file, and
+function writeFakeProvider(slip: Slip, body: string, binary = "opencode"): void {
+  // A fake provider binary: prints a receipts block, writes a file, and
   // commits it — the exact shape the real headless provider is asked for
   const script = [
     SHIM_SHEBANG,
@@ -110,8 +110,8 @@ function writeFakeProvider(slip: Slip, body: string): void {
     'echo "FAKE-PROVIDER-EXIT"',
     "sleep ${NSP_FAKE_SLEEP:-0}",
   ].join("\n");
-  writeFileSync(join(shimDir, "opencode"), script + "\n");
-  chmodSync(join(shimDir, "opencode"), 0o750);
+  writeFileSync(join(shimDir, binary), script + "\n");
+  chmodSync(join(shimDir, binary), 0o750);
 }
 
 function envWithShim(): NodeJS.ProcessEnv {
@@ -121,8 +121,16 @@ void envWithShim;
 
 // ---- provider prompt / args -------------------------------------------------
 
-test("providerArgs maps opencode → `run <prompt>` and claude → `-p <prompt>`", () => {
+test("providerArgs maps OpenCode, Codex, and Claude to headless commands", () => {
   assert.deepEqual(providerArgs("opencode", "hi"), ["run", "hi"]);
+  assert.deepEqual(providerArgs("codex", "hi"), [
+    "exec",
+    "--approve-for-me",
+    "--sandbox", "workspace-write",
+    "--ephemeral",
+    "--color", "never",
+    "hi",
+  ]);
   assert.deepEqual(providerArgs("claude", "hi"), ["-p", "hi"]);
   assert.equal(providerArgs("fake" as never, "hi"), null);
 });
@@ -178,6 +186,24 @@ test("runWorker: clean repo, fake provider runs, truth collected, PR-grade run",
     assert.equal(wip.testPass, true);
     assert.ok(wip.testOutput.includes("PETSHOP-NPM-TEST-GREEN"));
     assert.ok(wip.finishedAt !== undefined && wip.finishedAt > wip.startedAt);
+  } finally {
+    process.env.PATH = savedPath;
+  }
+});
+
+test("runWorker: Codex provider uses the same bounded worker contract", async () => {
+  process.env.NSP_TEST_MODE = "";
+  process.env.NSP_FAKE_SLEEP = "0";
+  const slip = slipFixture();
+  writeFakeProvider(slip, `#### receipts — ${slip.id}\n- summary: codex fixture`, "codex");
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${shimDir}:${savedPath ?? ""}`;
+  try {
+    const wip = await runWorker({ ...cfg, provider: "codex" }, slip, () => {}, {});
+    assert.equal(wip.blocked, false, `unexpected block: ${wip.reason ?? ""}`);
+    assert.ok(wip.providerOutput.includes("FAKE-PROVIDER-START"));
+    assert.deepEqual(wip.filesTouched, ["src/feature.js"]);
+    assert.equal(wip.testPass, true);
   } finally {
     process.env.PATH = savedPath;
   }

@@ -283,7 +283,7 @@ particular lines SKIP-marked, but P0's green baseline requires the stack).
 - supervisor/.env (git-ignored): SWITCH_API (http://localhost:8000),
   SWITCH_AGENT_KEY (registered once, stored chmod 600), SWITCH_ROOM=
   overnight-crew, TARGET_REPO=../target, GH_REPO (from git remote),
-  WORKER_PROVIDER=claude|opencode.
+  WORKER_PROVIDER=opencode|codex|claude.
 - Secrets never printed; every check prints `[set]`/`[missing]` only.
 
 ## 7. Hard rules → concrete enforcement
@@ -318,9 +318,9 @@ particular lines SKIP-marked, but P0's green baseline requires the stack).
 
 ## 9. Decisions (answered by the human 2026-11-02)
 
-D1. Worker spawner default = **headless opencode** (`opencode run`),
-provider-abstracted so `claude -p` can drop in later without changing the
-supervisor's contract.
+D1. Worker spawner default = **headless OpenCode** (`opencode run`), with
+first-class Codex (`codex exec`) and Claude (`claude -p`) choices behind the
+same supervisor contract.
 
 D2. Scheduling (P5) = **tiny built-in clock module** in supervisor; no
 node-cron dependency.

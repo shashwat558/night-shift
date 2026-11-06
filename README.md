@@ -38,8 +38,8 @@ flowchart LR
 ## Quickstart
 
 Requirements: Docker with Compose, Git, Node 22+, npm, OpenSSL, curl, GitHub CLI,
-and an authenticated coding-agent CLI (`opencode` by default). The deterministic
-demo itself makes no AI or GitHub API calls.
+and an authenticated coding-agent CLI (OpenCode or Codex; OpenCode is the
+default). The deterministic demo itself makes no AI or GitHub API calls.
 
 ```sh
 git clone https://github.com/shashwat558/night-shift.git
@@ -64,6 +64,21 @@ dependencies, builds the supervisor, and generates `ops/.env` with random
 local secrets when it is absent. It never replaces an existing environment.
 The Gateway is at `http://localhost:3100`, Mattermost at
 `http://localhost:8065`, and Switch Core at `http://localhost:8000`.
+
+Select the coding worker in `supervisor/.env`:
+
+```dotenv
+# Keep the existing OpenCode worker:
+WORKER_PROVIDER=opencode
+
+# Or use the Codex CLI authenticated on this machine:
+# WORKER_PROVIDER=codex
+```
+
+OpenCode runs as `opencode run`. Codex runs as a bounded, non-interactive
+`codex exec` session with an ephemeral history and the `workspace-write`
+sandbox. Both feed the same taskslip, test, receipt, PR, budget, and human-gate
+pipeline; changing providers does not bypass Night Shift's trust controls.
 
 ## Slack, Discord, Teams, and Telegram
 
@@ -161,7 +176,7 @@ crew has no room, no addressing, no gate input, and no morning handoff.
 ## Honest limitations
 
 - Provider-backed crew personas require the user's own authenticated
-  OpenCode or Claude account. During the recorded live phases those accounts
+  OpenCode, Codex, or Claude account. During the recorded live phases those accounts
   became unavailable, so assisted code preparation and scripted worker claims
   are disclosed in the room, PR receipts, and evidence documents.
 - The judge demo is deterministic rehearsal mode: it uses real Git branches,
