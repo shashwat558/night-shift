@@ -178,6 +178,7 @@ crew has no room, no addressing, no gate input, and no morning handoff.
 - [Architecture](ARCHITECTURE.md)
 - [Trust-gate manual](docs/gates-manual.md)
 - [Messaging-app setup](docs/messaging-apps.md)
+- [Live demo runbook](docs/live-demo-runbook.md)
 - [Phase 3 gate rehearsal](docs/phase-3-live-test.md)
 - [Phase 4 collision rehearsal](docs/phase-4-live-test.md)
 - [Phase 5 report rehearsal](docs/phase-5-live-test.md)
