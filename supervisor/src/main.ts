@@ -1,4 +1,4 @@
-// supervisor/src/main.ts — the overnight orchestration loop (SPEC §2 + PHASE-PLAN 2.6).
+// supervisor/src/main.ts — the overnight orchestration loop.
 //
 // Flow:
 //   1. Load config; start SwitchClient (WS + HTTP ops).
@@ -277,7 +277,7 @@ async function handleGoal(ctx: NightContext, msg: AddressedMessage, log: (...a: 
   );
 
   // budgeted night: up to N slips sequentially, per-slip wall-clock deadline,
-  // block-with-reason and CONTINUE on timeout (PHASE-PLAN 3.2)
+  // Block with a reason and continue to the next slip on timeout.
   const { outcomes } = await runBudgetedNight(
     slips,
     ctx.limits,

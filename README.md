@@ -1,56 +1,57 @@
 # Night Shift
 
-AI coding agents can produce a pile of overnight pull requests faster than a
-human can establish which ones are safe. Night Shift turns that unattended
-work into a visible team process: scoped taskslips, raw test receipts, current
-CI checks, explicit human gates, collision negotiation, and a 9 AM report.
+Night Shift is a Switch-native engineering crew that turns unattended AI coding
+into a reviewable team process. A human sets an overnight goal in chat; the crew
+creates scoped tasks, runs coding agents on isolated branches, validates their
+receipts against the actual diff and test output, and returns decision-ready pull
+requests with a concise morning report.
 
-Night Shift is a Switch-native overnight engineering crew. A human sets the
-goal in Mattermost; Switch carries every room event to the crew and supervisor;
-the supervisor opens draft work, refuses unsafe merges, and records an
-append-only ledger that can be replayed without trusting chat summaries.
+The core rule is simple: **agents can prepare work, but only a human can approve
+the exact commit that merges.**
 
-Its trust-control layer makes the morning handoff concrete: repository policy
-checks the actual PR diff, an independent reviewer challenges receipt claims,
-and Switch posts a decision card bound to the PR's exact commit. A later push
-changes the evidence fingerprint and expires the earlier decision.
+## What it does
 
-## Landing page
+- Converts one goal into bounded taskslips with file and time limits.
+- Runs OpenCode, Codex, or Claude as non-interactive workers.
+- Records actual files changed, test results, raw log tails, and elapsed time.
+- Detects overlapping file claims before parallel work collides.
+- Checks repository policy, live GitHub CI, reviewer findings, and the PR head SHA.
+- Expires approval when a new push changes the reviewed commit.
+- Posts approvals, holds, rollbacks, and the 9 AM report through Switch.
+- Supports Mattermost, Slack, Discord, Teams, and Telegram through Switch bridges.
 
-The project landing page lives in [`landing/`](landing/) and has no build-time
-dependencies. Preview it locally with:
-
-```sh
-python3 -m http.server 4173
-```
-
-Then open `http://127.0.0.1:4173/landing/`.
-
-## Architecture
+## How it works
 
 ```mermaid
 flowchart LR
-    H[Human in Mattermost] -->|goal and typed gates| S[Switch room and agent protocol]
+    H[Human in chat] --> S[Switch room]
     S --> L[Night lead]
-    S --> W1[Worker 1]
-    S --> W2[Worker 2]
-    S <--> P[Shift supervisor]
     L --> T[Scoped taskslips]
-    T --> P
-    P -->|headless coding runs| R[Target repository]
-    R -->|draft PR, tests, receipts, CI| P
-    W1 <-->|collision claims| S
-    W2 <-->|collision claims| S
-    P -->|append only| G[Ledger]
-    G --> N[9 AM report]
+    T --> P[Shift supervisor]
+    P --> W[Coding workers]
+    W --> R[Branches, tests, draft PRs]
+    R --> G[Receipts + policy + live CI + head SHA]
+    G --> S
+    S -->|approve exact commit| M[Merge]
+    P --> A[Append-only ledger]
+    A --> N[Morning report]
     N --> S
 ```
 
-## Quickstart
+Switch owns the shared room, identities, addressing, ordered event history, and
+collaboration bridges. The supervisor owns task execution, receipts, policy
+checks, GitHub state, human gates, and reporting.
 
-Requirements: Docker with Compose, Git, Node 22+, npm, OpenSSL, curl, GitHub CLI,
-and an authenticated coding-agent CLI (OpenCode or Codex; OpenCode is the
-default). The deterministic demo itself makes no AI or GitHub API calls.
+## Requirements
+
+- Docker with Compose
+- Git
+- Node.js 22+
+- npm, OpenSSL, and curl
+- GitHub CLI (`gh`) authenticated to your account
+- An authenticated OpenCode, Codex, or Claude CLI
+
+## Quickstart
 
 ```sh
 git clone https://github.com/shashwat558/night-shift.git
@@ -60,90 +61,60 @@ cd night-shift
 docker compose -f ops/standalone-docker-compose.yml \
   --profile collab --profile gateway up -d --wait
 
-until curl -fsS http://127.0.0.1:8000/health >/dev/null; do sleep 2; done
-
 node supervisor/dev-tools/provision-crew.mjs
 npm run build --prefix supervisor
 node supervisor/dist/src/provision.js
-
-node demo/run.mjs demo/night.yml --live
-./scripts/verify.sh --offline
+node supervisor/dist/src/main.js
 ```
 
-`bootstrap.sh` clones the separately versioned petshop target, installs locked
-dependencies, builds the supervisor, and generates `ops/.env` with random
-local secrets when it is absent. It never replaces an existing environment.
-The Gateway is at `http://localhost:3100`, Mattermost at
-`http://localhost:8065`, and Switch Core at `http://localhost:8000`.
+Local services:
 
-Select the coding worker in `supervisor/.env`:
+- Switch Core: <http://localhost:8000>
+- Mattermost: <http://localhost:8065>
+- Switch Gateway: <http://localhost:3100>
+
+`bootstrap.sh` installs dependencies, builds the supervisor, initializes the
+separately versioned demo target, and creates local environment secrets only
+when they do not already exist.
+
+## Choose a coding worker
+
+Set `WORKER_PROVIDER` in `supervisor/.env`:
 
 ```dotenv
-# Keep the existing OpenCode worker:
 WORKER_PROVIDER=opencode
-
-# Or use the Codex CLI authenticated on this machine:
 # WORKER_PROVIDER=codex
+# WORKER_PROVIDER=claude
 ```
 
-OpenCode runs as `opencode run`. Codex runs as a bounded, non-interactive
-`codex exec` session with an ephemeral history and the `workspace-write`
-sandbox. Both feed the same taskslip, test, receipt, PR, budget, and human-gate
-pipeline; changing providers does not bypass Night Shift's trust controls.
+Every provider receives the same taskslip and must pass through the same test,
+receipt, policy, CI, and human-approval pipeline.
 
-## Slack, Discord, Teams, and Telegram
+## Run a shift
 
-The same Dockerized Switch Core already includes all collaboration adapters;
-Night Shift does not run a separate bot or bypass Switch. For Slack, generate
-the version-matched manifest and connect the credentials with:
-
-```sh
-node scripts/connect-slack.mjs manifest
-cp ops/slack.env.example ops/slack.env
-chmod 600 ops/slack.env
-# Fill the xoxb- and xapp- values, then:
-node scripts/connect-slack.mjs connect
-```
-
-The supervisor accepts a comma-separated `SWITCH_ROOM_IDS` list and returns
-each command, decision card, and outcome to its originating room. See the
-[messaging-app guide](docs/messaging-apps.md) for channel adoption and the
-Discord, Telegram, and Teams boundaries.
-
-For a terminal-only rehearsal that still creates real local branches, runs the
-real target tests, validates receipts, exercises the gate table, forces and
-resolves the configured Git collision, and replays its ledger:
-
-```sh
-node demo/run.mjs demo/night.yml --offline
-```
-
-The scripted demo uses an isolated temporary Git remote and labels every room
-post `[scripted demo]`; it never mutates the target checkout or production
-ledger. Its three slips yield two local merges, one rollback, and one genuine
-add/add collision resolved in the workers' agreed order, normally in seconds.
-
-## Receipts and trust gates
-
-Every candidate ends with the same machine-checked receipts block: summary,
-actual files touched, PASS/FAIL, raw test-log tail, risk call, deviations, and
-measured budget. Missing fields become `needs-eyes`. A receipt saying FAIL can
-never merge, and `approve` is honored only when CI is green at read time.
-
-The room commands are deliberately typed because Switch 0.31.0 does not expose
-human reaction events to agents:
+Post a goal in the connected team room:
 
 ```text
-@shift-supervisor approve <task-id>
-@shift-supervisor rollback <task-id> <reason>
-@shift-supervisor hold <task-id>
+tonight: fix pagination and add regression coverage
+```
+
+Use typed gate commands for the resulting tasks:
+
+```text
 @shift-supervisor inspect <task-id>
+@shift-supervisor approve <task-id>
+@shift-supervisor hold <task-id>
+@shift-supervisor rollback <task-id> <reason>
 @shift-supervisor shift report please
 ```
 
-## Repository trust policy
+Approval succeeds only when the receipt is complete, tests pass, CI is green at
+read time, repository policy passes, and the reviewed head SHA still matches.
 
-Teams own the rules in [`crew/nightshift.policy.yml`](crew/nightshift.policy.yml):
+## Repository policy
+
+Teams own the overnight boundaries in
+[`crew/nightshift.policy.yml`](crew/nightshift.policy.yml):
 
 ```yaml
 max_changed_files: 8
@@ -157,47 +128,66 @@ review_paths:
   - src/payments/**
 ```
 
-`inspect` reads the live GitHub PR body, file list, CI rollup, and head SHA.
-The trust reviewer compares those facts with the receipt and policy, then
-posts a Switch decision card with its evidence fingerprint. Approval passes
-the reviewed SHA to GitHub's `--match-head-commit`; a changed branch is refused
-instead of merging under stale evidence. Blocked paths remain blocked even
-when their tests are green.
+Blocked paths remain blocked even when tests are green. Review paths require
+explicit attention. A new push invalidates the previous evidence fingerprint.
 
-## What Switch does here
+## Messaging apps
 
-Switch is the shared world, not a notification wrapper. It owns the bridged
-Mattermost room, agent identities, addressing, ordered room log, WebSocket
-event delivery, reconnect cursors, and HTTP operations used for every crew
-message. Goals, assignments, worker claims, human gates, rollback reasons, and
-the morning report all cross the Switch agent protocol. Remove Switch and the
-crew has no room, no addressing, no gate input, and no morning handoff.
+Night Shift talks only to Switch; it does not operate separate vendor bots.
+For Slack, generate the version-matched manifest and connect the bridge:
 
-## Evidence
+```sh
+node scripts/connect-slack.mjs manifest
+cp ops/slack.env.example ops/slack.env
+chmod 600 ops/slack.env
+# Add the local xoxb- and xapp- credentials, then:
+node scripts/connect-slack.mjs connect
+```
+
+See the [messaging guide](docs/messaging-apps.md) for Slack channel adoption and
+the Discord, Telegram, and Teams boundaries.
+
+## Demo and verification
+
+Run the deterministic demo without external AI or GitHub calls:
+
+```sh
+node demo/run.mjs demo/night.yml --offline
+```
+
+Run the repository checks:
+
+```sh
+npm run build --prefix supervisor
+npm test --prefix supervisor
+./scripts/verify.sh --offline
+```
+
+The demo uses an isolated temporary Git remote and does not modify the target
+checkout or the production ledger.
+
+## Landing page
+
+The dependency-free website lives in [`landing/`](landing/):
+
+```sh
+python3 -m http.server 4173
+```
+
+Open <http://127.0.0.1:4173/landing/>. Its documentation links open static HTML
+pages rather than raw Markdown files.
+
+## Documentation
 
 - [Architecture](ARCHITECTURE.md)
 - [Trust-gate manual](docs/gates-manual.md)
 - [Messaging-app setup](docs/messaging-apps.md)
 - [Live demo runbook](docs/live-demo-runbook.md)
-- [Phase 3 gate rehearsal](docs/phase-3-live-test.md)
-- [Phase 4 collision rehearsal](docs/phase-4-live-test.md)
-- [Phase 5 report rehearsal](docs/phase-5-live-test.md)
-- [Append-only ledger](supervisor/ledger.jsonl)
-- [Demo shot list](docs/demo-shotlist.md)
 
-## Honest limitations
+## Limitations
 
-- Provider-backed crew personas require the user's own authenticated
-  OpenCode, Codex, or Claude account. During the recorded live phases those accounts
-  became unavailable, so assisted code preparation and scripted worker claims
-  are disclosed in the room, PR receipts, and evidence documents.
-- The judge demo is deterministic rehearsal mode: it uses real Git branches,
-  target tests, receipt validation, collision scanning, gate decisions, and
-  ledger reporting. It also demonstrates a policy-blocked migration and
-  approval invalidation after rebase, but uses a temporary local remote instead
-  of creating or merging public GitHub PRs.
-- Earlier ledger records predate worker attribution and therefore appear as
-  `unassigned`; new task records store the worker explicitly.
-- The stack is pinned to Switch `0.31.0`. Its documented deltas—including
-  typed gates instead of reactions and owner-path addressing—are recorded in
-  `PROJECT_LOG.md`.
+- Provider-backed workers require your own authenticated CLI account.
+- Switch and collaboration-platform credentials remain local and are never
+  committed.
+- The bundled demo target is intentionally small; production repositories need
+  policy rules appropriate to their own sensitive paths and CI requirements.

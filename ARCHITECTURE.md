@@ -1,325 +1,182 @@
-# Night Shift — Architecture
+# Night Shift architecture
 
-An overnight crew of AI coding agents that works in a Switch chat room like
-real teammates: a human posts tonight's goal, a night-lead turns it into
-strictly scoped taskslips, worker agents take one slip at a time on their own
-branch and open PRs with receipts, a shift-supervisor validates receipts and
-enforces CI with every merge gated behind human sign-off in the room, and at
-9 AM the crew president — sorry, the supervisor — posts the shift report.
+Night Shift is an overnight software-delivery control loop built around Switch.
+The system separates code generation from trust decisions: coding providers can
+prepare a change, while the supervisor independently verifies the result and a
+human authorizes the exact commit that may merge.
 
-This file is plain-English documentation of every component: what it does,
-how it talks to the other parts, and what breaks if you delete it. Components
-below are listed in their planned build order; sections gain detail as each
-phase actually builds them. *(Last updated: trust control tower, phase 7.)*
+## System overview
 
-## Switch server (built phase 0)
+```mermaid
+flowchart LR
+    U[Human] <--> S[Switch room and bridges]
+    S <--> L[Night lead]
+    S <--> P[Shift supervisor]
+    S <--> W1[Worker identity 1]
+    S <--> W2[Worker identity 2]
+    L --> T[Taskslips]
+    T --> P
+    P --> C[Headless coding provider]
+    C --> R[Target Git repository]
+    R --> E[Diff, tests, draft PR, live CI]
+    E --> P
+    P --> G[Trust gate]
+    G -->|decision card| S
+    P --> A[Append-only ledger]
+    A --> M[Morning report]
+    M --> S
+```
 
-The heart of the project and non-negotiable (hard rule 7). Switch owns the
-room every participant lives in: it relays the bundled Mattermost chat into
-its own room log, runs the agent protocol (event streams in with WebSocket
-as the modern transport and SSE/long-poll kept for compatibility; HTTP
-operations out), and exposes the operations agents use (`post_message`,
-`read_context`, room tools). We pin `SWITCH_VERSION=0.31.0` and run the
-published all-in-one stack from GHCR via Docker Compose with profiles
-`collab` (Mattermost) and `gateway` (admin surface) — switched gateway on
-port 3100 because 3000 is taken on this host. On this build agents cannot
-edit their own settings (`update_agent_detail` refuses), so addressing and
-agent management go through the owner side: the crew will be owned by the
-admin account via a Gateway-created registration key. Delete it and there is
-no shared world: no room, no messages, no agents, no night.
+## Components
 
-## Mattermost (bundled, phase 0)
+### Switch and collaboration bridges
 
-The chat UI the team actually sees, bridged by Switch into the shared room
-log — each agent gets its own bot account, and the human sees everything the
-crew says. Delete it and the human loses the in-room view, but Switch still
-logs rooms server-side.
+Switch is the shared communication layer. It owns room identity, agent identity,
+addressing, ordered events, reconnect cursors, and bridges to Mattermost, Slack,
+Discord, Teams, and Telegram. Night Shift consumes Switch's agent protocol and
+does not parse vendor webhook payloads directly.
 
-## Collaboration adapters
+The local Docker stack exposes:
 
-Slack, Discord, Teams, Telegram, and Mattermost terminate in Switch Core's
-collaboration bridge. Night Shift never holds a platform webhook endpoint and
-never parses vendor event payloads. `scripts/connect-slack.mjs` uses the live
-Gateway contract to validate a workspace's Socket Mode tokens and create the
-Slack bridge without printing secrets. `SWITCH_ROOM_IDS` lets one supervisor
-claim multiple Switch rooms; every response is routed back to the room that
-originated the goal or gate, while the primary room receives scheduled reports.
+- Switch Core on port `8000`
+- Mattermost on port `8065`
+- Switch Gateway on port `3100`
 
-## The crew template + schemas (built phase 1)
+### Crew template
 
-`crew/` is the crew's standard operating procedure:
+`crew/nightshift.template.yaml` defines the room and three crew identities:
 
-- `nightshift.template.yaml` — a Switch room template (modeled on the repo's
-  `triage-pair` example) that declares the whole crew: team prefix, provider
-  and directory params, three agent slots (`{team}-night-lead` with
-  `addressing: anyone`, and two `{team}-worker-N` slots with
-  `addressing: owner-agents`, each with persona instructions), the
-  `overnight-crew` room with the deployer in it, and a kickoff that makes
-  each member state its one-line job. On this deploy the room block is
-  applied through the Gateway's `POST /rooms/from-yaml` (the server posts
-  the kickoff on the deployer's behalf) and the agents are registered
-  against the core API with an admin-created registration key — the
-  Console/machine path stays as the canonical zero-touch flow for a normal
-  Console deployment. Delete it and recreating the crew becomes hand word.
-- `taskslip.schema.md` / `receipt.schema.md` — the wire formats for work
-  orders and receipts. Delete these and nothing downstream can trust
-  anything a worker claims.
-- `docs/rehearsal-transcript.md` — credential-free room evidence from the
-  original crew bring-up.
+- **night lead** — turns the human goal into bounded taskslips;
+- **worker 1** and **worker 2** — acknowledge assignments and negotiate file
+  claims in the shared room;
+- **shift supervisor** — a separately provisioned protocol agent that executes
+  the night and enforces trust gates.
 
-## night-lead: {team}-night-lead (agent, built phase 1)
+`crew/taskslip.schema.md` and `crew/receipt.schema.md` define the contracts shared
+by every provider.
 
-Turns the human's goal into taskslips (scope, acceptance criteria, files
-allowed, time budget, backlog ref), writes them to `crew/taskslips/<date>.yml`,
-and narrates assignments. Addressing `anyone`: the human talks to it directly.
-It never writes code, and in phase 1 it proves this room-side — in the
-rehearsal it answers the human and wakes the workers with one cue each.
-The production taskslip flow is the supervisor's phase-2 job; night-lead's
-template instructions already spell out the exact drill. Delete it and no
-night ever starts, because nobody decomposes goals into safe units of work.
+### Shift supervisor
 
-## {team}-worker-1 / {team}-worker-2 (agents, built phase 1)
+The TypeScript supervisor in `supervisor/src/` is the execution and control
+plane. Its main responsibilities are:
 
-Room personas: they acknowledge assignments, post negotiation claims in the
-file-collision protocol (phase 4), and are the identities the trust stats
-accrue to. Addressing `owner-agents`: they wake for the supervisor and
-fellow crew members, never for a human's direct mention (demonstrated in
-rehearsal: a user-class mention arrived addressed and the runtime held the
-line — the server side does not refuse on 0.31.0, recorded in the deltas).
-The actual coding is done by headless provider runs the supervisor spawns.
-Delete them and the room has no voices to bargain with.
+1. connect to Switch and resume from a persisted event cursor;
+2. accept a human `tonight:` goal;
+3. load and validate taskslips;
+4. start bounded coding-provider processes on isolated branches;
+5. collect the actual diff, test exit code, raw log tail, and elapsed time;
+6. create draft pull requests with normalized receipts;
+7. inspect live CI, repository policy, reviewer findings, and the current head
+   SHA;
+8. honor human approve, hold, inspect, and rollback commands;
+9. append machine-readable events and produce the morning report.
 
-## supervisor/dev-tools/provision-crew.mjs + crew-rehearsal.mjs (built phase 1)
+The supervisor has no runtime npm dependencies beyond Node.js APIs. TypeScript
+is used for compilation and tests.
 
-## headless workers (child processes, built phase 2)
+### Headless coding providers
 
-`opencode run` (headless) inside `target/` on branch `shift/<task-id>`, fed
-the taskslip text and the receipt requirements. They touch only the slip's
-allowed files, run the test suite, and exit. Delete them and no code exists,
-so no PRs and no receipts are possible.
+The spawner supports OpenCode, Codex, and Claude through a common contract. A
+worker receives one taskslip, runs within the target repository, and is stopped
+when its budget expires. Provider output is advisory; the supervisor replaces
+claims about files, tests, and time with facts collected from the real run.
 
-## shift-supervisor (our protocol agent, Node 20+/TypeScript, built phase 2)
+### Target repository
 
-The machine the night runs on, living in `supervisor/`: registers itself
-once with the Switch server as agent `shift-supervisor`, connects over the
-agent protocol WebSocket (scope=all, filter=all, answers pings, resumes its
-cursor), listens for the human's `tonight:` goals, delegates slips to
-night-lead, spawns headless workers, opens draft PRs with the receipts
-block, posts results to the room, gates merges behind human commands with
-CI green (built phase 3), referees worker file collisions (phase 4), and renders
-the 9 AM shift report from `supervisor/ledger.jsonl` (phase 5). Its only
-runtime dependencies are Node's own WebSocket/fetch/fs. Delete it and
-taskslips pile up unread: nothing merges, nothing is blocked, no report at
-9 AM.
+`target/` is a separately versioned demo service initialized by
+`scripts/bootstrap.sh`. Each task runs on a `shift/<task-id>` branch. The target
+is excluded from the outer repository because it has its own Git history.
 
-**Phase 2 internals (the full implementation):**
+### Trust gate
 
-- `src/env.ts` — parses `supervisor/.env`; `loadConfig` / `testConfig`
-  (the offline helper every test file imports); no runtime library.
-- `src/ws.ts` — dependency-free RFC 6455 WebSocket client over
-  `http.request` (upgrade event). Sends the `Authorization: Bearer <key>`
-  header that Node's built-in `WebSocket` cannot attach. Answers pings with
-  matching bytes for non-empty RFC keepalive pings; empty pings use the
-  caller's cursor pong BEFORE dispatching events.
-  Reconnects on drop; refuses takeover. Fully tested with an in-process
-  server (`test/ws-harness.ts`).
-- `src/switchclient.ts` — connection lifecycle on top of `ws.ts`. Builds
-  the connection URL (`connection_id`, `rooms`, `start_from`, `expected_
-  generation`), runs the ping watchdog (8s without ping → force close →
-  resume), handles all frame types (connection_state, pong, evicted,
-  gap, refused), advances and persists the cursor, posts messages and
-  runs ops via HTTP. Reconnects on `heartbeat_lapsed`; stops final on
-  `taken_over`.
-- `src/state.ts` — cursor + generation persisted to `.state.json`
-  (chmod 600, git-ignored) so restarts resume instead of replaying.
-- `src/listener.ts` — classifies domain frames into `onAddressed` /
-  `onNonAddressed` / `onOtherDomain`; identifies human senders by the
-  bridge-puppet id pattern (`-user:`); extracts `@mention` handles.
-- `src/slips.ts` — zero-library strict YAML parser for
-  `crew/taskslips/<date>.yml`. Rejects the whole file on the first error,
-  names the line and field. 8 test cases; no js-yaml.
-- `src/goals.ts` — 2-phase watcher: phase A waits for the slips file to
-  appear (fs.watch + 1s poll fallback); phase B re-parses on every mtime
-  change until the file is clean. Clock is injectable for offline tests.
-- `src/spawner.ts` — headless worker runner: clean-worktree check → branch
-  from `origin/main` → provider child process with SIGTERM/SIGKILL budget
-  kill-switch (detached process group, 5s SIGKILL grace) → collect diff +
-  test run truth.
-- `src/prs.ts` — `parseProviderReceipt` pulls the worker's own receipts
-  block from its stdout; `renderReceipts` overlays the supervisor's facts
-  (actual diff, actual test exit, measured minutes); `renderPrBody` wraps
-  it in the PR body (scope, files_allowed, acceptance, receipts last);
-  `createDraftPr` runs `git push` + `gh pr create --draft`; `ciStatus`
-  reads the rollup from `gh pr view --json statusCheckRollup`.
-- `src/main.ts` — the overnight loop: load config, start SwitchClient,
-  wait for `tonight: …` from a human, nudge night-lead, watch for slips,
-  post the slip roster to the room, then for each slip: post assignment
-  narration + worker ack nudge → run the headless coder → open draft PR →
-  post room summary (task id / branch / PR link / PASS|FAIL) → append a
-  `ledger.jsonl` entry. SIGTERM/SIGINT cleanly stops the client.
+The trust gate combines independent evidence:
 
-## target/ — the petshop service (its own git repo, built phase 0)
+- receipt completeness;
+- actual files touched versus the taskslip allowlist;
+- real test result and raw output;
+- live GitHub CI status;
+- repository path and change-budget policy;
+- independent reviewer findings;
+- the exact PR head SHA.
 
-A small Express API the crew works on: health, pet list with pagination, pet
-create, pet detail. It has its own GitHub repo (`main` protected in spirit —
-merges only via supervisor with human sign-off), unit tests, and CI. Its
-`BACKLOG.md` holds six small pointed tasks; two of them are deliberately
-curated to collide on the same file for the phase-4 negotiation showpiece.
-Delete it and the crew has no product to build.
+An approval is bound to the evidence fingerprint and head commit. If the branch
+changes, the previous approval expires. `gh pr merge --match-head-commit` keeps
+the final GitHub operation bound to the reviewed SHA.
 
-## Ledger (supervisor/ledger.jsonl, built phase 2, formalized phase 5)
+### Collision negotiation
 
-Append-only machine truth of the night: every goal, assignment, PR, gate
-result, rollback, block, negotiation, and report carries a timestamp and
-actor. The room is the human view; the ledger is what we replay in tests
-and demos. Delete it and there is no report, no trust stats, and no
-reproducible evidence.
+Before overlapping work lands, the supervisor compares file claims and changed
+paths. Workers state their claim in the Switch room and agree on an order. The
+later branch rebases after the earlier change, reruns tests, and receives fresh
+evidence before it can be approved.
 
-`src/ledger.ts` is the one write/read boundary: it appends JSONL without
-rewriting existing bytes, tolerates and counts malformed historical lines,
-normalizes task IDs from both task records and event refs, and opens a new
-report window after each `report_posted`. New task records include the slip's
-worker identity; older records remain honestly grouped as `unassigned`.
+### Ledger and reports
 
-## 9 AM report (built phase 5)
+`supervisor/src/ledger.ts` is the append-only event boundary. Goals, task starts,
+PRs, refusals, approvals, rollbacks, blocks, collisions, and report publication
+are stored as JSON Lines. The ledger is runtime state and is not committed.
 
-`src/report.ts` deterministically folds the current ledger window into
-Markdown: linked merges, rollback reasons, blocks, receipt gaps, per-worker
-done/rollback/average-budget/trust figures, and one recommendation. Its trust
-formula is deliberately visible in every report. Publishing is idempotent:
-if today's report is already the last event and nothing followed it, later
-room or CLI triggers reuse the artifact without another post or ledger line.
+`supervisor/src/report.ts` folds the current ledger window into a deterministic
+morning report with merges, holds, rollbacks, blocks, worker statistics, and a
+recommendation. Scheduled and manual report triggers use the same publisher.
 
-`src/clock.ts` schedules local 09:00 and recalculates after each run so clock
-changes do not accumulate drift. `src/cli.ts` exposes `supervisor report`;
-the live listener accepts the addressed room phrase `shift report please`.
-All three paths call the same publisher, and only a successful room post
-appends `report_posted`. Delete these modules and the ledger remains useful
-machine data but the morning handoff disappears.
+## Data flow
 
-## scripts/verify.sh (built phase 0, grows every phase)
+1. A human posts `tonight: <goal>` in a connected room.
+2. The night lead writes scoped taskslips with acceptance criteria, allowed
+   files, assignee, and time budget.
+3. The supervisor validates the slips and launches one bounded worker per task.
+4. The worker changes code and runs tests on an isolated branch.
+5. The supervisor measures the run, normalizes the receipt, and opens a draft PR.
+6. The supervisor posts a decision card containing current evidence.
+7. The human inspects, approves, holds, or rolls back the task in the room.
+8. The supervisor records the outcome and continues with the remaining work.
+9. The ledger is folded into the morning report and posted through Switch.
 
-The always-green contract: every check prints labeled PASS/FAIL, offline
-mode runs with zero AI calls and zero flaky networks, `--live` optionally
-exercises the real stack. Night Shift never commits, and never builds, on a
-red base. Since phase 1 it also runs `scripts/p1-checks.mjs`: the crew SOP
-must literally parse (no YAML library — the template keys, the room roster,
-the kickoff), the schemas must state their contracts, and the three crew
-agents must exist, admin-owned, with the template's addressing rules.
-Since phase 2 it also runs `scripts/p2-checks.mjs` (offline): the slips
-parser rejects bad files and round-trips good ones, the receipt renderer
-emits the §4.2 field order, `renderPrBody` puts the receipts block last,
-`parseProviderReceipt` round-trips, `appendLedger` writes valid JSONL, and
-the supervisor unit suite (now 101 tests including gates, night,
-negotiation, reports, and the clock) passes.
-Phase 3 adds `scripts/p3-checks.mjs` for gate refusals, exact receipt gaps,
-cap planning, deadline continuation, and registry replay.
-Phase 4 adds collision scanning and negotiated-order checks. Phase 5 adds
-`scripts/p5-checks.mjs`: exact golden report replay, append/idempotency and
-accelerated-clock tests, then a clean scratch-clone build and replay.
-Phase 6 adds `scripts/p6-checks.mjs`: README quickstart commands, tracked
-stack inputs, the three-outcome demo schema, and the submission checklist.
-Delete it and nobody can ever again prove the phases keep working.
+## Trust invariants
 
-## Deterministic judge demo (built phase 6)
+- No worker may merge its own change.
+- Receipt claims never override the actual diff or test process.
+- A failing or missing test result cannot be approved.
+- CI is read at decision time, not copied from an earlier message.
+- Blocked paths cannot be waived by a green test suite.
+- Approval applies to one exact head SHA and expires after a push or rebase.
+- Every refusal and human decision is written to the ledger.
+- Collaboration platforms reach the supervisor only through Switch.
 
-`demo/night.yml` is a bounded three-slip script: one merge, one rollback, and
-one deliberate collision. `demo/run.mjs` creates an isolated Git remote from
-target main, makes three branches, runs the real target tests, renders and
-validates receipts, scans actual diffs, negotiates an order, forces and
-resolves the rebase conflict, re-tests, applies the gate decisions, and folds
-its append-only event stream through the production report renderer. `--live`
-posts each stage through Switch; `--offline` prints the same transcript. Both
-paths label the run as scripted and leave the target checkout and production
-ledger untouched. Delete it and judges must manually reconstruct five phases
-of behavior before they can see the product's complete trust loop.
+## Repository layout
 
-`scripts/bootstrap.sh`, the tracked pinned Compose file, and the judge README
-close the fresh-clone boundary. Bootstrap clones the separately versioned
-target, installs locked dependencies, builds the supervisor, and generates
-local secrets only when no `ops/.env` exists. Runtime secrets, agent state,
-reports, and the nested target remain ignored.
+```text
+crew/             room template, taskslip schema, receipt schema, policy
+demo/             deterministic isolated demo
+docs/             operator guides
+landing/          dependency-free website and HTML docs
+ops/              Docker Compose and environment examples
+scripts/          bootstrap, Slack connection, and verification commands
+supervisor/src/   execution, protocol, evidence, gates, and reporting
+supervisor/test/  unit and integration tests
+target/           separately versioned demo application (git-ignored)
+```
 
-## Trust control tower (built phase 7)
+## Failure behavior
 
-`crew/nightshift.policy.yml` is the repository owner's versioned boundary:
-maximum diff size, maximum slip budget, paths blocked from overnight approval,
-paths that require explicit review, and whether the independent reviewer is
-required. `src/policy.ts` parses the small YAML contract and evaluates the
-actual GitHub file list. Policy prose from an agent is never an input.
+- Invalid taskslip: reject the file and name the field and line.
+- Worker timeout: terminate the process group, record the block, continue.
+- Missing receipt field: keep the PR draft and post `needs-eyes`.
+- Red or pending CI: refuse approval without closing the PR.
+- Changed head SHA: expire approval and require a fresh inspection.
+- Switch disconnect: reconnect from the persisted cursor.
+- Duplicate connection identity: stop on takeover instead of competing.
+- Report post failure: do not mark the report as published.
 
-`src/reviewer.ts` compares four independent facts: GitHub's head SHA and file
-list, the worker receipt, CI truth, and repository policy. A missing SHA,
-receipt/diff mismatch, failed test proof, or blocked path becomes a challenge.
-Sensitive paths become a visible human-review finding. `src/evidence.ts`
-hashes those inputs into a stable evidence fingerprint and renders the compact
-decision card posted through Switch.
+## Verification
 
-Humans can ask `@shift-supervisor inspect <task-id>` without changing the PR.
-Approval recomputes the same evidence at read time, posts it in Switch, and
-calls GitHub merge with `--match-head-commit <reviewed-sha>`. A concurrent push
-therefore fails the merge instead of inheriting an approval for older code.
-The ledger records `policy_result`, `review_result`, gate, and merge events with
-the SHA and fingerprint.
+```sh
+npm run build --prefix supervisor
+npm test --prefix supervisor
+node demo/run.mjs demo/night.yml --offline
+./scripts/verify.sh --offline
+```
 
-## supervisor/dev-tools/groundcheck.mjs (built phase 0)
-
-The phase-0 proof, kept so the move-in is repeatable: registers an agent
-(`ground-check`, owned by admin via a Gateway registration key), opens the
-event stream, creates and joins room `shift-hangar`, and answers a human
-`@ground-check …` message with a fixed reply. It documents the server
-realities it discovered on this build (SSE needs `Accept: text/event-stream`,
-ops results wrap in `{"result": …}`, self-setting prompts the owner path).
-The production supervisor will reuse the same flows over the WebSocket
-transport. Delete it and every future fresh install loses its smoke test.
-
-The phase-1 pair beside it: `provision-crew.mjs` reads the template's agent
-blocks and stands the crew up (registration through the admin formula,
-addressing through the Gateway, room through `POST /rooms/from-yaml`),
-and `crew-rehearsal.mjs` is one agent's rehearsal runtime — it loads the
-agent's template persona, listens on the SSE transport, acts only on
-addressed messages, answers with `opencode run` words, and self-enforces
-the addressing rule. Delete the pair and standing the crew up after a
-machine reset becomes guesswork.
-
-## Trust gates + budgeted night (built phase 3)
-
-`supervisor/src/gates.ts` parses addressed human `approve`, `rollback`, and
-`hold` commands, validates the PR receipts against the receipt schema, and
-reads current CI through `gh pr view`. Approval requires complete receipts,
-PASS tests, and green CI at that read. Receipt gaps produce a needs-eyes
-reply naming each gap. Approval makes a draft ready and merges it; hold
-keeps or restores draft status. Rollback closes a draft and deletes its
-remote branch, or lands a revert of a merged PR. The fallback reverts in
-an isolated worktree and pushes main without changing a worker's checkout.
-Merged tasks remain discoverable for rollback through ledger history.
-Gate outcomes append `gate_result`, `merge`, `rollback`, `needs_eyes`, or
-`error` events. The open registry is rebuilt from the ledger on startup.
-
-`src/night.ts` processes slips sequentially with `NIGHT_MAX_SLIPS` (default
-5) and a whole-slip deadline of budget plus `NIGHT_GRACE_MS` (default
-180000; clamped to 5 seconds–30 minutes). Capped slips are named. A deadline
-aborts worker and command process groups, prevents subsequent PR operations,
-records a block reason, and continues. The provider's budget timer remains
-the first kill switch. Cancellation flows through `main.ts`, `spawner.ts`,
-`exec.ts`, and `prs.ts`; offline tests exercise real process cancellation.
-
-The connection reconnect timer keeps the supervisor alive while its socket
-is down. Optional `SUPERVISOR_WS_DEBUG=1` logs frame types and lengths, never
-message bodies or credentials. Every client process needs its own connection
-id. Typed commands replace reactions because reaction events do not reach
-agents. See `docs/gates-manual.md` and `docs/phase-3-live-test.md` for the
-manual, actual room evidence, and the disclosed assisted PR preparation.
-
-## Collision negotiation (built phase 4)
-
-`supervisor/src/negotiation.ts` compares the changed-file lists of open PR
-branches against `origin/main`. An addressed human `negotiate <task> <task>`
-command starts a room thread when the diffs overlap. The supervisor accepts
-one claim from each distinct agent sender per round, checks the named paths
-against the actual diff, and allows at most two rounds. Matching claims
-produce an agreed landing order; contradictions escalate side by side. The
-ledger records the scan and result. `gates.ts` enforces that an agreed second
-PR waits for the first merge, a validated post-rebase receipt, and a branch
-based on current main; normal receipt and green-CI gates still apply. The
-live BACKLOG-5/6 rehearsal is in `docs/phase-4-live-test.md`.
+The supervisor test suite covers protocol handling, task parsing, worker
+budgets, receipts, gates, collision ordering, reports, and reconnect behavior.

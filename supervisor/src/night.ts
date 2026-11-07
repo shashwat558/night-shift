@@ -1,4 +1,4 @@
-// supervisor/src/night.ts — the budgeted night (PHASE-PLAN 3.2).
+// supervisor/src/night.ts — the budgeted night.
 //
 // Contract:
 //   - process up to N slips sequentially (NIGHT_MAX_SLIPS; extra slips are

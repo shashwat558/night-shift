@@ -1,4 +1,4 @@
-// Phase 4: file-collision detection and two-round negotiation.
+// File-collision detection and two-round negotiation.
 import { exec } from "./exec.js";
 import type { OpenTask } from "./gates.js";
 

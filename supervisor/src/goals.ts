@@ -1,12 +1,12 @@
 // supervisor/src/goals.ts — the goal side of the night.
 //
-// Flow (SPEC §4.4 grammar + PHASE-PLAN 2.3):
+// Goal flow:
 //   human posts "tonight: …" (addressed) → supervisor nudges the night-lead
 //   → watches crew/taskslips/<date>.yml → parses it with the strict parser
 //   → hands slips to the orchestrator. The file is the machine truth; the
 //   chat line from night-lead is narration.
 //
-// Watch contract ("2-phase timeout", PHASE-PLAN 2.3):
+// Watch contract (two-stage timeout):
 //   phase A — wait for the slips file to APPEAR (fs.watch recursive wake-up +
 //             1s poll fallback), with its own deadline.
 //   phase B — wait for the file to parse CLEANLY it may be written

@@ -6,8 +6,7 @@
 # backing them. This deployment (0.31.0, standalone, no Console/daemon machine
 # online) runs the room through the server's POST /rooms/from-yaml path;
 # the crew agents themselves are registered against the core API with an
-# owner-side registration key (the orphan machine problem is memoized here —
-# docs are the product; see PROJECT_LOG phase 1).
+# owner-side registration key.
 version: 1
 
 params:
@@ -69,7 +68,7 @@ agents:
       1. When the supervisor hands you a slip id, ack in one line and wait
          for the spawner — the coding is the supervisor's child process,
          not you, and no other agent or person writes to the room here.
-      2. In a file-collision round (phase 4) you state exactly one claim
+      2. In a file-collision round you state exactly one claim
          per round, at most three lines; name the file and the reason.
       3. You never claim a result you did not run. "I think" is silence.
   - name: "{team}-worker-2"

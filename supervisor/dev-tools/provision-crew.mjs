@@ -1,9 +1,9 @@
-// Phase-1 provisioner: stands up the nightshift crew from
+// Provisioner: stands up the Night Shift crew from
 // crew/nightshift.template.yaml.
 //
 //   node supervisor/dev-tools/provision-crew.mjs [--overwrite-agents]
 //
-// What it does (headless reality on 0.31.0 — see PROJECT_LOG phase 1):
+// What it does on the headless 0.31.0 deployment:
 //  1. reads the template's agent blocks (team prefix applied),
 //  2. registers those agents via `POST /agents` with the admin-created
 //     registration token, so the crew is owned by the admin account,
@@ -264,7 +264,7 @@ if (!rRoom.ok) {
 }
 log("room provisioned:", roomBody.room_name ?? roomBody.room_id, roomBody.room_id);
 
-// keep phase-1 state for the rehearsal runtimes + verify.sh
+// Persist crew state for the supervisor and local verification.
 writeFileSync(
   `${ROOT}ops/.agents/crew-state.json`,
   JSON.stringify(

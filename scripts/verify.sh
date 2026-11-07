@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night Shift phase-0 verify: one command, labeled PASS/FAIL lines, exit 0 only
+# Night Shift verifier: one command, labeled PASS/FAIL lines, exit 0 only
 # when everything Night Shift depends on is in place. Default is offline (no
 # network calls beyond localhost); --live steps outside (GitHub, outbound).
 set -u
@@ -94,66 +94,10 @@ fi
 ( cd target && npm test >/dev/null 2>&1 ) &&
     pass "target tests green" || fail "target tests failing"
 
-# phase-1 additions: the crew SOP parses with the tiny provider (no YAML lib)
-if node scripts/p1-checks.mjs; then
-    pass "crew template keys + schemas + crew agents registered"
+if npm run build --prefix supervisor >/dev/null 2>&1 && npm test --prefix supervisor >/dev/null 2>&1; then
+    pass "supervisor build and test suite"
 else
-    fail "phase-1 crew checks failed (see node scripts/p1-checks.mjs)"
-fi
-
-# phase-2 additions: parser/renderer/ws unit tests + synthetic goal/receipt checks
-if node scripts/p2-checks.mjs; then
-    pass "phase-2 offline checks (slips parser, receipt renderer, unit tests)"
-else
-    fail "phase-2 checks failed (see node scripts/p2-checks.mjs)"
-fi
-
-# phase-3 additions: gate grammar/decision table/receipt validator/budget machine offline
-if node scripts/p3-checks.mjs; then
-    pass "phase-3 offline checks (gate logic, needs-eyes, budget state machine)"
-else
-    fail "phase-3 checks failed (see node scripts/p3-checks.mjs)"
-fi
-
-# phase-4 starting checks: branch overlap and claim decision state machine
-if node scripts/p4-checks.mjs; then
-    pass "phase-4 collision scanner and claim orderer"
-else
-    fail "phase-4 checks failed (see node scripts/p4-checks.mjs)"
-fi
-
-# phase-5 additions: deterministic report replay + append-only and clock checks
-if node scripts/p5-checks.mjs; then
-    pass "phase-5 report replay, append-only ledger, triggers, and scratch clone"
-else
-    fail "phase-5 checks failed (see node scripts/p5-checks.mjs)"
-fi
-
-# phase-6 additions: judge quickstart, deterministic demo schema, submission kit
-if node scripts/p6-checks.mjs; then
-    pass "phase-6 README quickstart, demo schema, and submission checklist"
-else
-    fail "phase-6 checks failed (see node scripts/p6-checks.mjs)"
-fi
-
-# trust-control additions: repository policy, independent review, SHA-bound gate
-if node scripts/p7-checks.mjs; then
-    pass "trust-control policy, reviewer challenge, evidence card, and exact-SHA merge"
-else
-    fail "trust-control checks failed (see node scripts/p7-checks.mjs)"
-fi
-
-# multi-platform additions: secure Slack onboarding + multi-room routing
-if node scripts/messaging-checks.mjs; then
-    pass "Slack connector, multi-room routing, and Dockerized messaging adapters"
-else
-    fail "messaging integration checks failed (see node scripts/messaging-checks.mjs)"
-fi
-
-if node scripts/landing-checks.mjs; then
-    pass "Night Shift landing page structure, content, and accessibility"
-else
-    fail "landing page checks failed (see node scripts/landing-checks.mjs)"
+    fail "supervisor build or tests failed"
 fi
 
 ( cd target && git status --porcelain | grep -q . ) && true

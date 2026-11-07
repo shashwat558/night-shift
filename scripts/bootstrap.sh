@@ -11,6 +11,8 @@ need npm
 need openssl
 need curl
 
+mkdir -p crew/taskslips
+
 if [ ! -d target/.git ]; then
   git clone https://github.com/shashwat558/nightshift-target.git target
 fi

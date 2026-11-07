@@ -2,7 +2,7 @@
 
 A worker's PR body ends with one `receipts` block: the worker's own account
 of what it did, in the supervisor's exact field order. The supervisor
-(phase 3) validates a merged-candidate PR against this block before
+validates a merged-candidate PR against this block before
 requesting human sign-off; missing or incomplete ⇒ gate-blocked `needs-eyes`
 with a room post naming exactly what is missing. A receipt that says FAIL
 can never be approved.
@@ -41,7 +41,7 @@ used*, so a PR can only carry one receipt (one task, one PR, one branch).
 
 - **worker** fills it from its own run; a worker that cannot fit the format
   posts `receipt rejected: <why>` in the room and stops.
-- **supervisor** (phase 3) re-runs nothing for the receipt itself: it checks
+- **supervisor** re-runs nothing for the receipt itself: it checks
   fields, then its own truth — the diff against `files_allowed`, CI green,
   budget spent — before anything reaches a human gate.
 - **human** sees the receipts in the PR and the room post; the gate commands
@@ -49,7 +49,7 @@ used*, so a PR can only carry one receipt (one task, one PR, one branch).
 
 ## Parser reality (defined now, rendered from P2's prs.ts)
 
-`supervisor/prs.ts` builds this block; `supervisor/gates.ts` (phase 3)
+`supervisor/prs.ts` builds this block; `supervisor/gates.ts`
 parses it with the same strictness. A line missing, out of order, or
 paraphrased in place of RAW output ⇒ incomplete receipt ⇒ pull request stays
 draft with the `needs-eyes` room post until the worker (or the human)
