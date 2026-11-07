@@ -2,7 +2,7 @@
 
 A taskslip is one work order: strictly scoped, budgeted, assigned to one
 worker. The night-lead turns tonight's goal into slips and writes them to
-`crew/taskslips/<date>.yml`; the supervisor (phase 2 onward) parses that file,
+`crew/taskslips/<date>.yml`; the supervisor parses that file,
 never the chat, as the machine truth.
 
 **File shape:** exactly one YAML document of the form below. `slips:` is the

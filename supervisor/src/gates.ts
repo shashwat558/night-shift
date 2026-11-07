@@ -1,6 +1,6 @@
-// supervisor/src/gates.ts — trust gates (PHASE-PLAN 3.1, SPEC §4.4 + §4.2).
+// supervisor/src/gates.ts — trust gates.
 //
-// Commands (SPEC §4.4 grammar):
+// Commands:
 //   @shift-supervisor approve <task-id> / rollback <task-id> / hold <task-id>
 //   (optional free-text after the task id = the recorded reason)
 //
@@ -353,7 +353,7 @@ export function needsEyesPost(taskId: string, gaps: string[]): string {
 export function ciRefusalPost(taskId: string, ciState: CiState, detail: string): string {
   return (
     `⛔ approve **${taskId}** refused — CI state: **${ciState}** (${detail}).\n` +
-    `approve counts only with CI green at read time (SPEC §4.4).`
+    `approve counts only with CI green at read time.`
   );
 }
 

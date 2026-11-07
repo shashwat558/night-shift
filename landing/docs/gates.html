@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Operate approvals, holds,
+inspections, and rollbacks safely from the team room.">
+  <meta name="theme-color" content="#f7f5f0">
+  <title>Gate manual · Night Shift Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Outfit:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./docs.css">
+  <script>try{const t=localStorage.getItem('night-shift-theme');if(t)document.documentElement.dataset.theme=t}catch(_){}</script>
+</head>
+<body>
+  <div class="reading-progress" data-reading-progress></div>
+  <header class="docs-header">
+    <a class="brand" href="../index.html" aria-label="Night Shift home"><span class="brand-mark">☾</span><span>Night Shift</span></a>
+    <span class="docs-label">Docs</span>
+    <nav aria-label="Documentation">
+      <a href="./index.html">Setup</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging</a>
+    </nav>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">◐</button>
+    <a class="github-link" href="https://github.com/shashwat558/night-shift">GitHub ↗</a>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <p>Start here</p>
+      <a href="./index.html">Setup guide</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging apps</a>
+      <p>Operate</p>
+      <a href="./live-demo-runbook.html">Live demo runbook</a>
+    </aside>
+    <main class="docs-main">
+      <div class="doc-kicker">Night Shift documentation</div>
+      <article class="prose">
+<h1 id="gate-manual--how-the-human-commands-the-crews-merges">Gate
+Manual — how the human commands the crew's merges</h1>
+<p>Night Shift's trust gates live in typed room commands. This is the
+manual for operating them live (the short version lives in this repo;
+the same grammar is pinned to the overnight-crew room).</p>
+<h2 id="why-typed-commands-not-emoji-reactions">Why typed commands, not
+emoji reactions</h2>
+<p>The original design imagined ✅/♻️/👀 reactions on the supervisor's
+posts as the gate trigger. The Switch agent protocol has <strong>no
+reaction events and no reaction ops</strong> — Mattermost reactions
+exist only as the bridge's own working/queued marks, and a human's
+reaction never reaches an agent. Rather than poll Mattermost around
+Switch (forbidden — hard rule 7), the gates run on typed commands.
+Humans may still drop the matching emoji on the supervisor's post for
+the room's visuals; <strong>the typed command is the machine
+truth</strong> and what the ledger records.</p>
+<h2 id="the-gate-commands">The gate commands</h2>
+<p>Address them to the supervisor in the room, verb-first:</p>
+<pre><code>@shift-supervisor approve &lt;task-id&gt;
+@shift-supervisor rollback &lt;task-id&gt; [whatever your reason is — free text]
+@shift-supervisor hold &lt;task-id&gt;
+@shift-supervisor inspect &lt;task-id&gt;</code></pre>
+<ul>
+<li><code>&lt;task-id&gt;</code> is the exact id from the taskslip /
+receipts block (e.g. <code>B-20261105-01</code>) — the gate applies to
+the task id, never to hunches.</li>
+<li>Everything after the task id on a <code>rollback</code> is the
+recorded reason (it goes into the room post and the ledger
+verbatim).</li>
+<li>Gates run while a night is still in flight; you do not need to wait
+for the shift to finish.</li>
+</ul>
+<h2 id="what-each-command-does">What each command does</h2>
+<h3 id="approve--honored-only-with-ci-green-at-read-time">approve —
+honored ONLY with CI green at read time</h3>
+<p>Sequence the supervisor runs, in order:</p>
+<ol type="1">
+<li><strong>Receipts validation</strong> against
+<code>crew/receipt.schema.md</code>. Any missing or incomplete field ⇒
+the PR stays draft and the supervisor posts <code>needs-eyes</code>
+naming <strong>exactly</strong> what is missing:
+<pre><code>👀 needs-eyes — receipt for **B-20261105-01** is incomplete; PR stays draft:
+- missing field: risk-call
+- test-log fenced block is empty — the RAW runner tail must be inside it
+Fix the receipts block and say it again.</code></pre></li>
+<li><strong>FAIL is final</strong>: a receipt that says
+<code>tests: FAIL</code> can never merge — refused on the spot
+(§4.2).</li>
+<li><strong>CI green at read time</strong>
+(<code>gh pr view --json statusCheckRollup</code>):
+pending/red/no-checks ⇒ refusal reply with the current state:
+<pre><code>⛔ approve **B-20261105-01** refused — CI state: **pending** (1 checks, still running).
+approve counts only with CI green at read time.</code></pre>
+Nothing is closed — say approve again once CI is green.</li>
+<li><strong>Merge</strong>: <code>gh pr ready &lt;n&gt;</code> (undraft)
++ <code>gh pr merge</code>. Then:
+<pre><code>✅ **B-20261105-01** approved — receipts clean, CI green. Merged PR #7.
+Receipts filed, human signed off.</code></pre>
+Ledger: <code>gate_result</code> (approved) + <code>merge</code> events;
+task leaves the gate registry.</li>
+</ol>
+<p>Every refusal is a ledger event too (<code>approve_refused_ci</code>,
+<code>approve_refused_fail</code>, <code>needs_eyes</code>) — the 9 AM
+report counts them.</p>
+<h3 id="rollback--always-honored-recorded-with-your-reason">rollback —
+always honored, recorded with your reason</h3>
+<p>Works on an open (draft) PR or an already-merged one:</p>
+<ul>
+<li>open PR → <code>gh pr close &lt;n&gt;</code> + branch deleted;</li>
+<li>merged PR → revert of the merge (gh pr revert, falling back to a
+manual <code>git revert -m 1</code> of the merge commit in an isolated
+worktree, then push to main). The revert PR created by gh is merged
+before success is reported.</li>
+</ul>
+<p>Room post:</p>
+<pre><code>♻️ rolled back: worker touched auth file
+B-20261105-02: PR #8 closed · branch deleted · recorded in the ledger.</code></pre>
+<p>Ledger: <code>gate_result</code> (rolled_back) with your reason
+text.</p>
+<h3 id="hold--the-pr-stays-draft-needs-eyes-nothing-merges">hold — the
+PR stays draft, needs-eyes, nothing merges</h3>
+<pre><code>⏸ **B-20261105-03** held — the PR stays draft; nothing merges until you approve it later.</code></pre>
+<p>Held tasks stay in the gate registry, so a later <code>approve</code>
+(once you're satisfied, e.g. after the receipts were fixed in-room) or
+<code>rollback</code> still works. Ledger: <code>gate_result</code>
+(hold).</p>
+<h2 id="the-budgeted-night-behind-the-gates-32">The budgeted night
+behind the gates (§3.2)</h2>
+<ul>
+<li>The night processes <strong>up to N slips sequentially</strong>
+(default 5; <code>NIGHT_MAX_SLIPS</code> in supervisor/.env). Slips past
+the cap are skipped with an explicit 🛏 post naming the cap — they stay
+in the backlog.</li>
+<li>Each slip runs inside a wall-clock deadline of its own
+<code>time_budget_minutes</code> + a grace window (default 3 min;
+<code>NIGHT_GRACE_MS</code>).</li>
+<li>The worker process itself is killed at its budget (SIGTERM → SIGKILL
+on the process group). If the whole slip (worker + push + PR + tests)
+still exceeds its deadline, the supervisor posts:
+<pre><code>⏰ `B-20261105-04` — slip deadline of 23 min (budget 20 min + grace) exceeded.
+The worker was stopped and **B-20261105-04** is blocked; the night continues with the next slip.</code></pre>
+and moves on — one bad night must not eat the whole backlog.</li>
+</ul>
+<h2 id="who-says-what--quick-table">Who says what — quick table</h2>
+<table>
+<thead>
+<tr class="header">
+<th>You type</th>
+<th>Place</th>
+<th>Machine truth</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>tonight: implement BACKLOG 1-3</code></td>
+<td>room</td>
+<td>goal → slips file → sequential night</td>
+</tr>
+<tr class="even">
+<td><code>@shift-supervisor approve &lt;id&gt;</code></td>
+<td>room</td>
+<td>receipts → CI → merge (or a refusal reply)</td>
+</tr>
+<tr class="odd">
+<td><code>@shift-supervisor rollback &lt;id&gt; &lt;reason&gt;</code></td>
+<td>room</td>
+<td>close/revert + ledger + post</td>
+</tr>
+<tr class="even">
+<td><code>@shift-supervisor hold &lt;id&gt;</code></td>
+<td>room</td>
+<td>stays draft, recorded</td>
+</tr>
+<tr class="odd">
+<td><code>@shift-supervisor inspect &lt;id&gt;</code></td>
+<td>room</td>
+<td>posts a policy/reviewer/CI/receipt card for the current commit;
+changes nothing</td>
+</tr>
+<tr class="even">
+<td>emoji ✅/♻️/👀</td>
+<td>room</td>
+<td>visual only — never read by the supervisor</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ledger-events-the-gates-write">Ledger events the gates
+write</h2>
+<p>One JSON line each in <code>supervisor/ledger.jsonl</code> (machine
+truth; the room is the human view): <code>gate_result</code> (with
+<code>gate: approved | rolled_back | hold | approve_refused_ci | approve_refused_fail</code>),
+<code>merge</code>, <code>rollback</code>, <code>needs_eyes</code>,
+<code>block</code>, <code>error</code>. The 9 AM report replays exactly
+these.</p>
+<p>Goals can be explicitly addressed:
+<code>@shift-supervisor tonight: implement BACKLOG 2</code>. Each
+scratch client must use its own connection id; reusing the live
+supervisor connection id evicts that process.</p>
+      </article>
+      <footer class="doc-footer"><span>AI works the night. You own the merge.</span><a href="../index.html">Back to Night Shift →</a></footer>
+    </main>
+        <aside class="page-toc" aria-label="On this page">
+      <p>On this page</p>
+<ul>
+<li><a href="#gate-manual--how-the-human-commands-the-crews-merges"
+id="toc-gate-manual--how-the-human-commands-the-crews-merges">Gate
+Manual — how the human commands the crew's merges</a>
+<ul>
+<li><a href="#why-typed-commands-not-emoji-reactions"
+id="toc-why-typed-commands-not-emoji-reactions">Why typed commands, not
+emoji reactions</a></li>
+<li><a href="#the-gate-commands"
+id="toc-the-gate-commands">The gate commands</a></li>
+<li><a href="#what-each-command-does"
+id="toc-what-each-command-does">What each command does</a>
+<ul>
+<li><a href="#approve--honored-only-with-ci-green-at-read-time"
+id="toc-approve--honored-only-with-ci-green-at-read-time">approve —
+honored ONLY with CI green at read time</a></li>
+<li><a href="#rollback--always-honored-recorded-with-your-reason"
+id="toc-rollback--always-honored-recorded-with-your-reason">rollback —
+always honored, recorded with your reason</a></li>
+<li><a href="#hold--the-pr-stays-draft-needs-eyes-nothing-merges"
+id="toc-hold--the-pr-stays-draft-needs-eyes-nothing-merges">hold — the
+PR stays draft, needs-eyes, nothing merges</a></li>
+</ul></li>
+<li><a href="#the-budgeted-night-behind-the-gates-32"
+id="toc-the-budgeted-night-behind-the-gates-32">The budgeted night
+behind the gates (§3.2)</a></li>
+<li><a href="#who-says-what--quick-table"
+id="toc-who-says-what--quick-table">Who says what — quick table</a></li>
+<li><a href="#ledger-events-the-gates-write"
+id="toc-ledger-events-the-gates-write">Ledger events the gates
+write</a></li>
+</ul></li>
+</ul>
+    </aside>
+      </div>
+  <script src="./docs.js"></script>
+</body>
+</html>

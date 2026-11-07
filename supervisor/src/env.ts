@@ -1,4 +1,4 @@
-// supervisor/src/env.ts — the configuration contract (SPEC §6).
+// supervisor/src/env.ts — the configuration contract.
 // Runtime config lives in supervisor/.env (git-ignored, chmod 600, written by
 // the provisioner). No dotenv library: parse it the same way the dev-tools do.
 // Secrets are never logged; callers print [set]/[missing] only.
@@ -22,7 +22,7 @@ export interface Config {
   apiBase: string;
   /** Gateway admin surface base (owner-path addressing, provision only). */
   gatewayBase: string;
-  /** This agent's registered name (SPEC §3: shift-supervisor). */
+  /** This agent's registered name. */
   agentName: string;
   /** Registered id (from provision). */
   agentId: string;

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How the Night Shift crew,
+supervisor, Switch, trust gates, and ledger work together.">
+  <meta name="theme-color" content="#f7f5f0">
+  <title>Architecture · Night Shift Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Outfit:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./docs.css">
+  <script>try{const t=localStorage.getItem('night-shift-theme');if(t)document.documentElement.dataset.theme=t}catch(_){}</script>
+</head>
+<body>
+  <div class="reading-progress" data-reading-progress></div>
+  <header class="docs-header">
+    <a class="brand" href="../index.html" aria-label="Night Shift home"><span class="brand-mark">☾</span><span>Night Shift</span></a>
+    <span class="docs-label">Docs</span>
+    <nav aria-label="Documentation">
+      <a href="./index.html">Setup</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging</a>
+    </nav>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">◐</button>
+    <a class="github-link" href="https://github.com/shashwat558/night-shift">GitHub ↗</a>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <p>Start here</p>
+      <a href="./index.html">Setup guide</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging apps</a>
+      <p>Operate</p>
+      <a href="./live-demo-runbook.html">Live demo runbook</a>
+    </aside>
+    <main class="docs-main">
+      <div class="doc-kicker">Night Shift documentation</div>
+      <article class="prose">
+<h1 id="night-shift-architecture">Night Shift architecture</h1>
+<p>Night Shift is an overnight software-delivery control loop built
+around Switch. The system separates code generation from trust
+decisions: coding providers can prepare a change, while the supervisor
+independently verifies the result and a human authorizes the exact
+commit that may merge.</p>
+<h2 id="system-overview">System overview</h2>
+<pre class="mermaid"><code>flowchart LR
+    U[Human] &lt;--&gt; S[Switch room and bridges]
+    S &lt;--&gt; L[Night lead]
+    S &lt;--&gt; P[Shift supervisor]
+    S &lt;--&gt; W1[Worker identity 1]
+    S &lt;--&gt; W2[Worker identity 2]
+    L --&gt; T[Taskslips]
+    T --&gt; P
+    P --&gt; C[Headless coding provider]
+    C --&gt; R[Target Git repository]
+    R --&gt; E[Diff, tests, draft PR, live CI]
+    E --&gt; P
+    P --&gt; G[Trust gate]
+    G --&gt;|decision card| S
+    P --&gt; A[Append-only ledger]
+    A --&gt; M[Morning report]
+    M --&gt; S</code></pre>
+<h2 id="components">Components</h2>
+<h3 id="switch-and-collaboration-bridges">Switch and collaboration
+bridges</h3>
+<p>Switch is the shared communication layer. It owns room identity,
+agent identity, addressing, ordered events, reconnect cursors, and
+bridges to Mattermost, Slack, Discord, Teams, and Telegram. Night Shift
+consumes Switch's agent protocol and does not parse vendor webhook
+payloads directly.</p>
+<p>The local Docker stack exposes:</p>
+<ul>
+<li>Switch Core on port <code>8000</code></li>
+<li>Mattermost on port <code>8065</code></li>
+<li>Switch Gateway on port <code>3100</code></li>
+</ul>
+<h3 id="crew-template">Crew template</h3>
+<p><code>crew/nightshift.template.yaml</code> defines the room and three
+crew identities:</p>
+<ul>
+<li><strong>night lead</strong> — turns the human goal into bounded
+taskslips;</li>
+<li><strong>worker 1</strong> and <strong>worker 2</strong> —
+acknowledge assignments and negotiate file claims in the shared
+room;</li>
+<li><strong>shift supervisor</strong> — a separately provisioned
+protocol agent that executes the night and enforces trust gates.</li>
+</ul>
+<p><code>crew/taskslip.schema.md</code> and
+<code>crew/receipt.schema.md</code> define the contracts shared by every
+provider.</p>
+<h3 id="shift-supervisor">Shift supervisor</h3>
+<p>The TypeScript supervisor in <code>supervisor/src/</code> is the
+execution and control plane. Its main responsibilities are:</p>
+<ol type="1">
+<li>connect to Switch and resume from a persisted event cursor;</li>
+<li>accept a human <code>tonight:</code> goal;</li>
+<li>load and validate taskslips;</li>
+<li>start bounded coding-provider processes on isolated branches;</li>
+<li>collect the actual diff, test exit code, raw log tail, and elapsed
+time;</li>
+<li>create draft pull requests with normalized receipts;</li>
+<li>inspect live CI, repository policy, reviewer findings, and the
+current head SHA;</li>
+<li>honor human approve, hold, inspect, and rollback commands;</li>
+<li>append machine-readable events and produce the morning report.</li>
+</ol>
+<p>The supervisor has no runtime npm dependencies beyond Node.js APIs.
+TypeScript is used for compilation and tests.</p>
+<h3 id="headless-coding-providers">Headless coding providers</h3>
+<p>The spawner supports OpenCode, Codex, and Claude through a common
+contract. A worker receives one taskslip, runs within the target
+repository, and is stopped when its budget expires. Provider output is
+advisory; the supervisor replaces claims about files, tests, and time
+with facts collected from the real run.</p>
+<h3 id="target-repository">Target repository</h3>
+<p><code>target/</code> is a separately versioned demo service
+initialized by <code>scripts/bootstrap.sh</code>. Each task runs on a
+<code>shift/&lt;task-id&gt;</code> branch. The target is excluded from
+the outer repository because it has its own Git history.</p>
+<h3 id="trust-gate">Trust gate</h3>
+<p>The trust gate combines independent evidence:</p>
+<ul>
+<li>receipt completeness;</li>
+<li>actual files touched versus the taskslip allowlist;</li>
+<li>real test result and raw output;</li>
+<li>live GitHub CI status;</li>
+<li>repository path and change-budget policy;</li>
+<li>independent reviewer findings;</li>
+<li>the exact PR head SHA.</li>
+</ul>
+<p>An approval is bound to the evidence fingerprint and head commit. If
+the branch changes, the previous approval expires.
+<code>gh pr merge --match-head-commit</code> keeps the final GitHub
+operation bound to the reviewed SHA.</p>
+<h3 id="collision-negotiation">Collision negotiation</h3>
+<p>Before overlapping work lands, the supervisor compares file claims
+and changed paths. Workers state their claim in the Switch room and
+agree on an order. The later branch rebases after the earlier change,
+reruns tests, and receives fresh evidence before it can be approved.</p>
+<h3 id="ledger-and-reports">Ledger and reports</h3>
+<p><code>supervisor/src/ledger.ts</code> is the append-only event
+boundary. Goals, task starts, PRs, refusals, approvals, rollbacks,
+blocks, collisions, and report publication are stored as JSON Lines. The
+ledger is runtime state and is not committed.</p>
+<p><code>supervisor/src/report.ts</code> folds the current ledger window
+into a deterministic morning report with merges, holds, rollbacks,
+blocks, worker statistics, and a recommendation. Scheduled and manual
+report triggers use the same publisher.</p>
+<h2 id="data-flow">Data flow</h2>
+<ol type="1">
+<li>A human posts <code>tonight: &lt;goal&gt;</code> in a connected
+room.</li>
+<li>The night lead writes scoped taskslips with acceptance criteria,
+allowed files, assignee, and time budget.</li>
+<li>The supervisor validates the slips and launches one bounded worker
+per task.</li>
+<li>The worker changes code and runs tests on an isolated branch.</li>
+<li>The supervisor measures the run, normalizes the receipt, and opens a
+draft PR.</li>
+<li>The supervisor posts a decision card containing current
+evidence.</li>
+<li>The human inspects, approves, holds, or rolls back the task in the
+room.</li>
+<li>The supervisor records the outcome and continues with the remaining
+work.</li>
+<li>The ledger is folded into the morning report and posted through
+Switch.</li>
+</ol>
+<h2 id="trust-invariants">Trust invariants</h2>
+<ul>
+<li>No worker may merge its own change.</li>
+<li>Receipt claims never override the actual diff or test process.</li>
+<li>A failing or missing test result cannot be approved.</li>
+<li>CI is read at decision time, not copied from an earlier
+message.</li>
+<li>Blocked paths cannot be waived by a green test suite.</li>
+<li>Approval applies to one exact head SHA and expires after a push or
+rebase.</li>
+<li>Every refusal and human decision is written to the ledger.</li>
+<li>Collaboration platforms reach the supervisor only through
+Switch.</li>
+</ul>
+<h2 id="repository-layout">Repository layout</h2>
+<pre class="text"><code>crew/             room template, taskslip schema, receipt schema, policy
+demo/             deterministic isolated demo
+docs/             operator guides
+landing/          dependency-free website and HTML docs
+ops/              Docker Compose and environment examples
+scripts/          bootstrap, Slack connection, and verification commands
+supervisor/src/   execution, protocol, evidence, gates, and reporting
+supervisor/test/  unit and integration tests
+target/           separately versioned demo application (git-ignored)</code></pre>
+<h2 id="failure-behavior">Failure behavior</h2>
+<ul>
+<li>Invalid taskslip: reject the file and name the field and line.</li>
+<li>Worker timeout: terminate the process group, record the block,
+continue.</li>
+<li>Missing receipt field: keep the PR draft and post
+<code>needs-eyes</code>.</li>
+<li>Red or pending CI: refuse approval without closing the PR.</li>
+<li>Changed head SHA: expire approval and require a fresh
+inspection.</li>
+<li>Switch disconnect: reconnect from the persisted cursor.</li>
+<li>Duplicate connection identity: stop on takeover instead of
+competing.</li>
+<li>Report post failure: do not mark the report as published.</li>
+</ul>
+<h2 id="verification">Verification</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> run build <span class="at">--prefix</span> supervisor</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> test <span class="at">--prefix</span> supervisor</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> demo/run.mjs demo/night.yml <span class="at">--offline</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="ex">./scripts/verify.sh</span> <span class="at">--offline</span></span></code></pre></div>
+<p>The supervisor test suite covers protocol handling, task parsing,
+worker budgets, receipts, gates, collision ordering, reports, and
+reconnect behavior.</p>
+      </article>
+      <footer class="doc-footer"><span>AI works the night. You own the merge.</span><a href="../index.html">Back to Night Shift →</a></footer>
+    </main>
+        <aside class="page-toc" aria-label="On this page">
+      <p>On this page</p>
+<ul>
+<li><a href="#night-shift-architecture"
+id="toc-night-shift-architecture">Night Shift architecture</a>
+<ul>
+<li><a href="#system-overview" id="toc-system-overview">System
+overview</a></li>
+<li><a href="#components" id="toc-components">Components</a>
+<ul>
+<li><a href="#switch-and-collaboration-bridges"
+id="toc-switch-and-collaboration-bridges">Switch and collaboration
+bridges</a></li>
+<li><a href="#crew-template" id="toc-crew-template">Crew
+template</a></li>
+<li><a href="#shift-supervisor" id="toc-shift-supervisor">Shift
+supervisor</a></li>
+<li><a href="#headless-coding-providers"
+id="toc-headless-coding-providers">Headless coding providers</a></li>
+<li><a href="#target-repository" id="toc-target-repository">Target
+repository</a></li>
+<li><a href="#trust-gate" id="toc-trust-gate">Trust gate</a></li>
+<li><a href="#collision-negotiation"
+id="toc-collision-negotiation">Collision negotiation</a></li>
+<li><a href="#ledger-and-reports" id="toc-ledger-and-reports">Ledger and
+reports</a></li>
+</ul></li>
+<li><a href="#data-flow" id="toc-data-flow">Data flow</a></li>
+<li><a href="#trust-invariants" id="toc-trust-invariants">Trust
+invariants</a></li>
+<li><a href="#repository-layout" id="toc-repository-layout">Repository
+layout</a></li>
+<li><a href="#failure-behavior" id="toc-failure-behavior">Failure
+behavior</a></li>
+<li><a href="#verification" id="toc-verification">Verification</a></li>
+</ul></li>
+</ul>
+    </aside>
+      </div>
+  <script src="./docs.js"></script>
+</body>
+</html>

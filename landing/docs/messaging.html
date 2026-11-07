@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Connect Slack, Discord, Teams,
+Telegram, and Mattermost through Switch.">
+  <meta name="theme-color" content="#f7f5f0">
+  <title>Messaging apps · Night Shift Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Outfit:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./docs.css">
+  <script>try{const t=localStorage.getItem('night-shift-theme');if(t)document.documentElement.dataset.theme=t}catch(_){}</script>
+</head>
+<body>
+  <div class="reading-progress" data-reading-progress></div>
+  <header class="docs-header">
+    <a class="brand" href="../index.html" aria-label="Night Shift home"><span class="brand-mark">☾</span><span>Night Shift</span></a>
+    <span class="docs-label">Docs</span>
+    <nav aria-label="Documentation">
+      <a href="./index.html">Setup</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging</a>
+    </nav>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">◐</button>
+    <a class="github-link" href="https://github.com/shashwat558/night-shift">GitHub ↗</a>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <p>Start here</p>
+      <a href="./index.html">Setup guide</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging apps</a>
+      <p>Operate</p>
+      <a href="./live-demo-runbook.html">Live demo runbook</a>
+    </aside>
+    <main class="docs-main">
+      <div class="doc-kicker">Night Shift documentation</div>
+      <article class="prose">
+<h1 id="messaging-apps">Messaging apps</h1>
+<p>Night Shift talks only to Switch. Slack, Discord, Teams, Telegram,
+and Mattermost are Switch collaboration bridges, so every platform uses
+the same receipts, policy, GitHub gates, and ledger.</p>
+<h2 id="slack-quickstart">Slack quickstart</h2>
+<p>Switch Core already contains the Slack adapter. It uses outbound
+Socket Mode; there is no Slack container and no public callback URL is
+required.</p>
+<ol type="1">
+<li><p>Start the existing Docker stack:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose <span class="at">-f</span> ops/standalone-docker-compose.yml <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--profile</span> collab <span class="at">--profile</span> gateway up <span class="at">-d</span> <span class="at">--wait</span></span></code></pre></div></li>
+<li><p>Print the exact Slack app manifest for this Switch version:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> scripts/connect-slack.mjs manifest</span></code></pre></div>
+<p>In Slack API, create an app from that manifest. Generate an app token
+with <code>connections:write</code>, install the app, and copy its
+<code>xapp-</code> and <code>xoxb-</code> tokens.</p></li>
+<li><p>Store the credentials locally:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ops/slack.env.example ops/slack.env</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">chmod</span> 600 ops/slack.env</span></code></pre></div>
+<p>Fill <code>SLACK_BOT_TOKEN</code> and <code>SLACK_APP_TOKEN</code>.
+The real file is git-ignored.</p></li>
+<li><p>Connect idempotently:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> scripts/connect-slack.mjs connect</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> scripts/connect-slack.mjs status</span></code></pre></div>
+<p>The connector validates both tokens with Slack through the live
+Gateway, derives the workspace id, refuses a world-readable secrets
+file, never prints tokens, and does not duplicate an existing named
+bridge.</p></li>
+<li><p>In Slack, <code>/invite @Agent Switch</code> into the desired
+channel, then run <code>/invite-agent @shift-supervisor</code> there.
+Add the room UUID shown in Switch Console to
+<code>SWITCH_ROOM_IDS</code> in <code>supervisor/.env</code>:</p>
+<pre class="env"><code>SWITCH_ROOM_ID=&lt;primary-mattermost-room&gt;
+SWITCH_ROOM_IDS=&lt;primary-mattermost-room&gt;,&lt;slack-room&gt;</code></pre>
+<p>Rebuild and restart the supervisor. Replies, decision cards, goals,
+and gate results return to the room that issued the command; scheduled
+reports continue to use the primary room.</p></li>
+</ol>
+<h2 id="other-platforms">Other platforms</h2>
+<p>The same Switch Gateway exposes <code>discord</code>,
+<code>telegram</code>, and <code>teams</code> bridge types. Discord and
+Telegram also connect outbound. Teams requires a public HTTPS endpoint
+and Microsoft Entra/Azure Bot configuration. Add their room UUIDs to
+<code>SWITCH_ROOM_IDS</code>; Night Shift itself needs no platform
+SDK.</p>
+<p>Do not connect chat platforms directly to the supervisor with
+webhooks. That would bypass Switch addressing, identity, ordered
+history, and the trust audit trail.</p>
+      </article>
+      <footer class="doc-footer"><span>AI works the night. You own the merge.</span><a href="../index.html">Back to Night Shift →</a></footer>
+    </main>
+        <aside class="page-toc" aria-label="On this page">
+      <p>On this page</p>
+<ul>
+<li><a href="#messaging-apps" id="toc-messaging-apps">Messaging apps</a>
+<ul>
+<li><a href="#slack-quickstart" id="toc-slack-quickstart">Slack
+quickstart</a></li>
+<li><a href="#other-platforms" id="toc-other-platforms">Other
+platforms</a></li>
+</ul></li>
+</ul>
+    </aside>
+      </div>
+  <script src="./docs.js"></script>
+</body>
+</html>

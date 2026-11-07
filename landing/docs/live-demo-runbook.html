@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Run the Night Shift demo from setup
+through the morning handoff.">
+  <meta name="theme-color" content="#f7f5f0">
+  <title>Live demo runbook · Night Shift Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Outfit:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./docs.css">
+  <script>try{const t=localStorage.getItem('night-shift-theme');if(t)document.documentElement.dataset.theme=t}catch(_){}</script>
+</head>
+<body>
+  <div class="reading-progress" data-reading-progress></div>
+  <header class="docs-header">
+    <a class="brand" href="../index.html" aria-label="Night Shift home"><span class="brand-mark">☾</span><span>Night Shift</span></a>
+    <span class="docs-label">Docs</span>
+    <nav aria-label="Documentation">
+      <a href="./index.html">Setup</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging</a>
+    </nav>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">◐</button>
+    <a class="github-link" href="https://github.com/shashwat558/night-shift">GitHub ↗</a>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <p>Start here</p>
+      <a href="./index.html">Setup guide</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging apps</a>
+      <p>Operate</p>
+      <a href="./live-demo-runbook.html">Live demo runbook</a>
+    </aside>
+    <main class="docs-main">
+      <div class="doc-kicker">Night Shift documentation</div>
+      <article class="prose">
+<h1 id="night-shift-live-demo-runbook">Night Shift live demo
+runbook</h1>
+<p>Use this runbook for the submission recording. The rehearsal is
+deterministic, posts through the real Switch room, and labels every
+message <code>[scripted demo]</code>. It uses an isolated temporary Git
+remote and does not mutate <code>target/</code> or the production
+ledger.</p>
+<h2 id="presentation-tabs">Presentation tabs</h2>
+<p>Open these in this order:</p>
+<ol type="1">
+<li>Landing page: <a
+href="http://127.0.0.1:4173/landing/">http://127.0.0.1:4173/landing/</a></li>
+<li>Mattermost: <a
+href="http://127.0.0.1:8065/">http://127.0.0.1:8065/</a> — open
+<code>overnight-crew</code></li>
+<li>Switch Gateway: <a
+href="http://127.0.0.1:3100/">http://127.0.0.1:3100/</a></li>
+<li>GitHub repository: <a
+href="https://github.com/shashwat558/night-shift">https://github.com/shashwat558/night-shift</a></li>
+</ol>
+<p>If Mattermost asks you to sign in, use the configured demo user. Its
+email and password are stored locally as
+<code>MATTERMOST_USER_EMAIL</code> and
+<code>MATTERMOST_USER_PASSWORD</code> in <code>ops/.env</code>; never
+show that file while recording.</p>
+<h2 id="start-the-environment">Start the environment</h2>
+<p>From the repository root:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose <span class="at">-f</span> ops/standalone-docker-compose.yml <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--profile</span> collab <span class="at">--profile</span> gateway up <span class="at">-d</span> <span class="at">--wait</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> run build <span class="at">--prefix</span> supervisor</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> supervisor/dist/src/main.js</span></code></pre></div>
+<p>In a second terminal, start the landing page:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> http.server 4173</span></code></pre></div>
+<p>The supervisor is ready when its terminal says
+<code>connection UP</code> and
+<code>listening for "tonight: …" messages</code>.</p>
+<h2 id="run-the-showpiece">Run the showpiece</h2>
+<p>Keep Mattermost visible, then run:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> demo/run.mjs demo/night.yml <span class="at">--live</span></span></code></pre></div>
+<p>The terminal finishes in a few seconds. The room receives the
+complete story:</p>
+<ol type="1">
+<li>One overnight goal and three bounded slips.</li>
+<li>Real target tests, receipt validation, and draft demo PR
+results.</li>
+<li>An independent reviewer challenge for a protected migration.</li>
+<li>A genuine shared-file collision and negotiated landing order.</li>
+<li>One exact-commit approval, one policy rollback, and one approval
+invalidated after rebase.</li>
+<li>Refreshed evidence, the second merge, and a ledger-derived morning
+report.</li>
+</ol>
+<h2 id="recording-order">Recording order</h2>
+<ul>
+<li><p>Begin on the landing page while delivering the personal
+hook.</p></li>
+<li><p>Move to Mattermost and show that the goal, agents, reviewer,
+gates, and report all occupy one Switch room.</p></li>
+<li><p>Run the live demo and pause on the protected-path decision
+card.</p></li>
+<li><p>Pause again on <code>approval expired</code> to explain exact-SHA
+binding.</p></li>
+<li><p>Finish on the morning report, then show the green verifier:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">./scripts/verify.sh</span> <span class="at">--offline</span></span></code></pre></div></li>
+<li><p>Return to the landing-page headline for the closing
+line.</p></li>
+</ul>
+<h2 id="safe-reset">Safe reset</h2>
+<p>The demo can be run again without cleaning the target repository. A
+second run creates a new temporary Git environment and posts another
+clearly marked block to the room. Avoid rerunning it immediately before
+recording unless you want two copies in the channel.</p>
+<p>To stop the local services after recording:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose <span class="at">-f</span> ops/standalone-docker-compose.yml <span class="dt">\</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--profile</span> collab <span class="at">--profile</span> gateway down</span></code></pre></div>
+      </article>
+      <footer class="doc-footer"><span>AI works the night. You own the merge.</span><a href="../index.html">Back to Night Shift →</a></footer>
+    </main>
+        <aside class="page-toc" aria-label="On this page">
+      <p>On this page</p>
+<ul>
+<li><a href="#night-shift-live-demo-runbook"
+id="toc-night-shift-live-demo-runbook">Night Shift live demo runbook</a>
+<ul>
+<li><a href="#presentation-tabs" id="toc-presentation-tabs">Presentation
+tabs</a></li>
+<li><a href="#start-the-environment"
+id="toc-start-the-environment">Start the environment</a></li>
+<li><a href="#run-the-showpiece" id="toc-run-the-showpiece">Run the
+showpiece</a></li>
+<li><a href="#recording-order" id="toc-recording-order">Recording
+order</a></li>
+<li><a href="#safe-reset" id="toc-safe-reset">Safe reset</a></li>
+</ul></li>
+</ul>
+    </aside>
+      </div>
+  <script src="./docs.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 // supervisor/src/provision.ts — register shift-supervisor ONCE and set it up
-// on this 0.31.0 deploy (see PROJECT_LOG phase 0/1 deltas):
+// on this 0.31.0 deploy:
 //
 //   1. read the stack's ops/.env (registration token + ports + admin creds)
 //   2. POST /agents with the registration token (409 → keep existing key;
@@ -15,7 +15,7 @@
 //
 // The op-registry-driven argument filling is deliberate: the live docs tell
 // us to read the registry instead of hard-coding it, and any 400 names the
-// expected shape (recorded into PROJECT_LOG on first live run).
+// expected shape.
 //
 // Usage: node dist/provision.js [--renew-key]
 // Prints no secret, ever.

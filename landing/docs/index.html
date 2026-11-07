@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Install, configure, and run the
+Night Shift engineering crew.">
+  <meta name="theme-color" content="#f7f5f0">
+  <title>Setup guide · Night Shift Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Outfit:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./docs.css">
+  <script>try{const t=localStorage.getItem('night-shift-theme');if(t)document.documentElement.dataset.theme=t}catch(_){}</script>
+</head>
+<body>
+  <div class="reading-progress" data-reading-progress></div>
+  <header class="docs-header">
+    <a class="brand" href="../index.html" aria-label="Night Shift home"><span class="brand-mark">☾</span><span>Night Shift</span></a>
+    <span class="docs-label">Docs</span>
+    <nav aria-label="Documentation">
+      <a href="./index.html">Setup</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging</a>
+    </nav>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">◐</button>
+    <a class="github-link" href="https://github.com/shashwat558/night-shift">GitHub ↗</a>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <p>Start here</p>
+      <a href="./index.html">Setup guide</a>
+      <a href="./architecture.html">Architecture</a>
+      <a href="./gates.html">Gate manual</a>
+      <a href="./messaging.html">Messaging apps</a>
+      <p>Operate</p>
+      <a href="./live-demo-runbook.html">Live demo runbook</a>
+    </aside>
+    <main class="docs-main">
+      <div class="doc-kicker">Night Shift documentation</div>
+      <article class="prose">
+<h1 id="night-shift">Night Shift</h1>
+<p>Night Shift is a Switch-native engineering crew that turns unattended
+AI coding into a reviewable team process. A human sets an overnight goal
+in chat; the crew creates scoped tasks, runs coding agents on isolated
+branches, validates their receipts against the actual diff and test
+output, and returns decision-ready pull requests with a concise morning
+report.</p>
+<p>The core rule is simple: <strong>agents can prepare work, but only a
+human can approve the exact commit that merges.</strong></p>
+<h2 id="what-it-does">What it does</h2>
+<ul>
+<li>Converts one goal into bounded taskslips with file and time
+limits.</li>
+<li>Runs OpenCode, Codex, or Claude as non-interactive workers.</li>
+<li>Records actual files changed, test results, raw log tails, and
+elapsed time.</li>
+<li>Detects overlapping file claims before parallel work collides.</li>
+<li>Checks repository policy, live GitHub CI, reviewer findings, and the
+PR head SHA.</li>
+<li>Expires approval when a new push changes the reviewed commit.</li>
+<li>Posts approvals, holds, rollbacks, and the 9 AM report through
+Switch.</li>
+<li>Supports Mattermost, Slack, Discord, Teams, and Telegram through
+Switch bridges.</li>
+</ul>
+<h2 id="how-it-works">How it works</h2>
+<pre class="mermaid"><code>flowchart LR
+    H[Human in chat] --&gt; S[Switch room]
+    S --&gt; L[Night lead]
+    L --&gt; T[Scoped taskslips]
+    T --&gt; P[Shift supervisor]
+    P --&gt; W[Coding workers]
+    W --&gt; R[Branches, tests, draft PRs]
+    R --&gt; G[Receipts + policy + live CI + head SHA]
+    G --&gt; S
+    S --&gt;|approve exact commit| M[Merge]
+    P --&gt; A[Append-only ledger]
+    A --&gt; N[Morning report]
+    N --&gt; S</code></pre>
+<p>Switch owns the shared room, identities, addressing, ordered event
+history, and collaboration bridges. The supervisor owns task execution,
+receipts, policy checks, GitHub state, human gates, and reporting.</p>
+<h2 id="requirements">Requirements</h2>
+<ul>
+<li>Docker with Compose</li>
+<li>Git</li>
+<li>Node.js 22+</li>
+<li>npm, OpenSSL, and curl</li>
+<li>GitHub CLI (<code>gh</code>) authenticated to your account</li>
+<li>An authenticated OpenCode, Codex, or Claude CLI</li>
+</ul>
+<h2 id="quickstart">Quickstart</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/shashwat558/night-shift.git</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> night-shift</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">./scripts/bootstrap.sh</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose <span class="at">-f</span> ops/standalone-docker-compose.yml <span class="dt">\</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--profile</span> collab <span class="at">--profile</span> gateway up <span class="at">-d</span> <span class="at">--wait</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> supervisor/dev-tools/provision-crew.mjs</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> run build <span class="at">--prefix</span> supervisor</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> supervisor/dist/src/provision.js</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> supervisor/dist/src/main.js</span></code></pre></div>
+<p>Local services:</p>
+<ul>
+<li>Switch Core: <a
+href="http://localhost:8000">http://localhost:8000</a></li>
+<li>Mattermost: <a
+href="http://localhost:8065">http://localhost:8065</a></li>
+<li>Switch Gateway: <a
+href="http://localhost:3100">http://localhost:3100</a></li>
+</ul>
+<p><code>bootstrap.sh</code> installs dependencies, builds the
+supervisor, initializes the separately versioned demo target, and
+creates local environment secrets only when they do not already
+exist.</p>
+<h2 id="choose-a-coding-worker">Choose a coding worker</h2>
+<p>Set <code>WORKER_PROVIDER</code> in <code>supervisor/.env</code>:</p>
+<pre class="dotenv"><code>WORKER_PROVIDER=opencode
+# WORKER_PROVIDER=codex
+# WORKER_PROVIDER=claude</code></pre>
+<p>Every provider receives the same taskslip and must pass through the
+same test, receipt, policy, CI, and human-approval pipeline.</p>
+<h2 id="run-a-shift">Run a shift</h2>
+<p>Post a goal in the connected team room:</p>
+<pre class="text"><code>tonight: fix pagination and add regression coverage</code></pre>
+<p>Use typed gate commands for the resulting tasks:</p>
+<pre class="text"><code>@shift-supervisor inspect &lt;task-id&gt;
+@shift-supervisor approve &lt;task-id&gt;
+@shift-supervisor hold &lt;task-id&gt;
+@shift-supervisor rollback &lt;task-id&gt; &lt;reason&gt;
+@shift-supervisor shift report please</code></pre>
+<p>Approval succeeds only when the receipt is complete, tests pass, CI
+is green at read time, repository policy passes, and the reviewed head
+SHA still matches.</p>
+<h2 id="repository-policy">Repository policy</h2>
+<p>Teams own the overnight boundaries in <a
+href="../../crew/nightshift.policy.yml"><code>crew/nightshift.policy.yml</code></a>:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">max_changed_files</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">max_budget_minutes</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">reviewer_required</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">blocked_paths</span><span class="kw">:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> migrations/**</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> .github/workflows/**</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="fu">review_paths</span><span class="kw">:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> src/auth/**</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> src/payments/**</span></span></code></pre></div>
+<p>Blocked paths remain blocked even when tests are green. Review paths
+require explicit attention. A new push invalidates the previous evidence
+fingerprint.</p>
+<h2 id="messaging-apps">Messaging apps</h2>
+<p>Night Shift talks only to Switch; it does not operate separate vendor
+bots. For Slack, generate the version-matched manifest and connect the
+bridge:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> scripts/connect-slack.mjs manifest</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ops/slack.env.example ops/slack.env</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">chmod</span> 600 ops/slack.env</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Add the local xoxb- and xapp- credentials, then:</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> scripts/connect-slack.mjs connect</span></code></pre></div>
+<p>See the <a href="messaging.html">messaging guide</a> for Slack
+channel adoption and the Discord, Telegram, and Teams boundaries.</p>
+<h2 id="demo-and-verification">Demo and verification</h2>
+<p>Run the deterministic demo without external AI or GitHub calls:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">node</span> demo/run.mjs demo/night.yml <span class="at">--offline</span></span></code></pre></div>
+<p>Run the repository checks:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> run build <span class="at">--prefix</span> supervisor</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> test <span class="at">--prefix</span> supervisor</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="ex">./scripts/verify.sh</span> <span class="at">--offline</span></span></code></pre></div>
+<p>The demo uses an isolated temporary Git remote and does not modify
+the target checkout or the production ledger.</p>
+<h2 id="landing-page">Landing page</h2>
+<p>The dependency-free website lives in <a
+href="../index.html"><code>landing/</code></a>:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode sh"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> http.server 4173</span></code></pre></div>
+<p>Open <a
+href="http://127.0.0.1:4173/landing/">http://127.0.0.1:4173/landing/</a>.
+Its documentation links open static HTML pages rather than raw Markdown
+files.</p>
+<h2 id="documentation">Documentation</h2>
+<ul>
+<li><a href="architecture.html">Architecture</a></li>
+<li><a href="gates.html">Trust-gate manual</a></li>
+<li><a href="messaging.html">Messaging-app setup</a></li>
+<li><a href="live-demo-runbook.html">Live demo runbook</a></li>
+</ul>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li>Provider-backed workers require your own authenticated CLI
+account.</li>
+<li>Switch and collaboration-platform credentials remain local and are
+never committed.</li>
+<li>The bundled demo target is intentionally small; production
+repositories need policy rules appropriate to their own sensitive paths
+and CI requirements.</li>
+</ul>
+      </article>
+      <footer class="doc-footer"><span>AI works the night. You own the merge.</span><a href="../index.html">Back to Night Shift →</a></footer>
+    </main>
+        <aside class="page-toc" aria-label="On this page">
+      <p>On this page</p>
+<ul>
+<li><a href="#night-shift" id="toc-night-shift">Night Shift</a>
+<ul>
+<li><a href="#what-it-does" id="toc-what-it-does">What it does</a></li>
+<li><a href="#how-it-works" id="toc-how-it-works">How it works</a></li>
+<li><a href="#requirements" id="toc-requirements">Requirements</a></li>
+<li><a href="#quickstart" id="toc-quickstart">Quickstart</a></li>
+<li><a href="#choose-a-coding-worker"
+id="toc-choose-a-coding-worker">Choose a coding worker</a></li>
+<li><a href="#run-a-shift" id="toc-run-a-shift">Run a shift</a></li>
+<li><a href="#repository-policy" id="toc-repository-policy">Repository
+policy</a></li>
+<li><a href="#messaging-apps" id="toc-messaging-apps">Messaging
+apps</a></li>
+<li><a href="#demo-and-verification" id="toc-demo-and-verification">Demo
+and verification</a></li>
+<li><a href="#landing-page" id="toc-landing-page">Landing page</a></li>
+<li><a href="#documentation"
+id="toc-documentation">Documentation</a></li>
+<li><a href="#limitations" id="toc-limitations">Limitations</a></li>
+</ul></li>
+</ul>
+    </aside>
+      </div>
+  <script src="./docs.js"></script>
+</body>
+</html>

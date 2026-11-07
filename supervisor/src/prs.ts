@@ -9,8 +9,8 @@
 //   - the supervisor overlays the parts it owns from real runs: files-touched
 //     (actual diff), tests + test-log (actual npm test exit + raw tail),
 //     budget (actual measured minutes)
-//   - anything the provider did not supply keeps an honest placeholder —
-//     phase-3 gates turn receipt gaps into needs-eyes posts
+//   - anything the provider did not supply keeps an honest placeholder;
+//     trust gates turn receipt gaps into needs-eyes posts
 
 import { exec } from "./exec.js";
 import type { Slip } from "./slips.js";

@@ -6,9 +6,8 @@ grammar is pinned to the overnight-crew room).
 
 ## Why typed commands, not emoji reactions
 
-The original plan imagined ✅/♻️/👀 reactions on the supervisor's posts as
-the gate trigger. Fetched docs (2026-11-02, recorded as a docs delta in
-PROJECT_LOG) showed the Switch agent protocol has **no reaction events and
+The original design imagined ✅/♻️/👀 reactions on the supervisor's posts as
+the gate trigger. The Switch agent protocol has **no reaction events and
 no reaction ops** — Mattermost reactions exist only as the bridge's own
 working/queued marks, and a human's reaction never reaches an agent. Rather
 than poll Mattermost around Switch (forbidden — hard rule 7), the gates run
@@ -16,7 +15,7 @@ on typed commands. Humans may still drop the matching emoji on the
 supervisor's post for the room's visuals; **the typed command is the
 machine truth** and what the ledger records.
 
-## The three commands (SPEC §4.4)
+## The gate commands
 
 Address them to the supervisor in the room, verb-first:
 
@@ -55,7 +54,7 @@ Sequence the supervisor runs, in order:
    pending/red/no-checks ⇒ refusal reply with the current state:
    ```
    ⛔ approve **B-20261105-01** refused — CI state: **pending** (1 checks, still running).
-   approve counts only with CI green at read time (SPEC §4.4).
+   approve counts only with CI green at read time.
    ```
    Nothing is closed — say approve again once CI is green.
 4. **Merge**: `gh pr ready <n>` (undraft) + `gh pr merge`. Then:

@@ -3,8 +3,7 @@
 //
 // WHY hand-rolled: Node's built-in WebSocket (undici) cannot attach custom
 // headers, and the Switch agent protocol authenticates the socket with
-// `Authorization: Bearer <agent key>` (PROJECT_LOG phase 0, delta 5 — the
-// ground-check ran on the SSE compatibility path because of this).
+// `Authorization: Bearer <agent key>`.
 //
 // Contract notes (docs.switchagents.ai — agent connection):
 //  - the client answers pings with pongs carrying the read cursor
